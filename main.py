@@ -140,7 +140,6 @@ async def wallet_handler(message: types.Message) -> None:
 
     await message.answer(response, parse_mode="Markdown")
 
-async def main() -> None:
 @dp.message(F.text == "💱 Exchange")
 async def exchange_handler(message: types.Message, state: FSMContext) -> None:
     """
