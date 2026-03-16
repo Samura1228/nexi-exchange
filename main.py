@@ -3,11 +3,17 @@ import logging
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from dotenv import load_dotenv
-from database import init_db, async_session, User
+from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import ccxt.async_support as ccxt
-from keyboards import get_main_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard
+
+class ExchangeState(StatesGroup):
+    select_pair = State()
+    enter_amount = State()
 
 # Load environment variables
 load_dotenv()
@@ -37,6 +43,16 @@ async def command_start_handler(message: types.Message) -> None:
         if not user:
             new_user = User(telegram_id=user_id, username=username)
             session.add(new_user)
+            await session.flush() # Flush to get the new_user.id
+
+            # Create initial balances
+            initial_balances = [
+                Balance(user_id=new_user.id, asset='USDT', amount=10000.0),
+                Balance(user_id=new_user.id, asset='BTC', amount=0.0),
+                Balance(user_id=new_user.id, asset='ETH', amount=0.0),
+                Balance(user_id=new_user.id, asset='TON', amount=0.0),
+            ]
+            session.add_all(initial_balances)
             await session.commit()
 
     await message.answer(
@@ -73,6 +89,155 @@ async def prices_handler(message: types.Message) -> None:
         await message.answer("Sorry, I couldn't fetch the prices right now. Please try again later.")
     finally:
         await exchange.close()
+
+@dp.message(F.text == "💼 Wallet")
+async def wallet_handler(message: types.Message) -> None:
+    """
+    This handler receives messages with "💼 Wallet" text
+    """
+    user_id = message.from_user.id
+
+    async with async_session() as session:
+        # Get the user's internal ID
+        stmt = select(User).where(User.telegram_id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            await message.answer("User not found. Please use /start to register.")
+            return
+
+        # Get the user's balances
+        stmt = select(Balance).where(Balance.user_id == user.id)
+        result = await session.execute(stmt)
+        balances = result.scalars().all()
+
+    if not balances:
+        await message.answer("Your wallet is empty.")
+        return
+
+    # Format the response
+    response = "💼 **Your Wallet:**\n\n"
+    
+    # Define emojis for assets
+    emojis = {
+        'USDT': '💵',
+        'BTC': '🪙',
+        'ETH': '🔷',
+        'TON': '💎'
+    }
+
+    for balance in balances:
+        emoji = emojis.get(balance.asset, '💰')
+        # Format amount: 2 decimal places for USDT, up to 8 for crypto
+        if balance.asset == 'USDT':
+            formatted_amount = f"{balance.amount:,.2f}"
+        else:
+            # Remove trailing zeros after decimal point for crypto, but keep at least one zero if it's exactly 0
+            formatted_amount = f"{balance.amount:.8f}".rstrip('0').rstrip('.') if balance.amount > 0 else "0.00"
+            
+        response += f"{emoji} **{balance.asset}:** {formatted_amount}\n"
+
+    await message.answer(response, parse_mode="Markdown")
+
+async def main() -> None:
+@dp.message(F.text == "💱 Exchange")
+async def exchange_handler(message: types.Message, state: FSMContext) -> None:
+    """
+    This handler receives messages with "💱 Exchange" text
+    """
+    await message.answer(
+        "Select a trading pair:",
+        reply_markup=get_exchange_keyboard()
+    )
+    await state.set_state(ExchangeState.select_pair)
+
+@dp.callback_query(ExchangeState.select_pair, F.data.startswith("swap_usdt_"))
+async def process_pair_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    target_asset = callback_query.data.split("_")[2].upper()
+    await state.update_data(target_asset=target_asset)
+    
+    await callback_query.message.answer(f"How much USDT do you want to swap for {target_asset}?")
+    await state.set_state(ExchangeState.enter_amount)
+    await callback_query.answer()
+
+@dp.message(ExchangeState.enter_amount)
+async def process_amount(message: types.Message, state: FSMContext) -> None:
+    try:
+        amount_usdt = float(message.text)
+        if amount_usdt <= 0:
+            raise ValueError("Amount must be positive.")
+    except ValueError:
+        await message.answer("Please enter a valid positive number.")
+        return
+
+    data = await state.get_data()
+    target_asset = data['target_asset']
+    user_id = message.from_user.id
+
+    async with async_session() as session:
+        # Get user
+        stmt = select(User).where(User.telegram_id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            await message.answer("User not found. Please use /start to register.")
+            await state.clear()
+            return
+
+        # Check USDT balance
+        stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == 'USDT')
+        result = await session.execute(stmt)
+        usdt_balance = result.scalar_one_or_none()
+
+        if not usdt_balance or usdt_balance.amount < amount_usdt:
+            await message.answer("Insufficient USDT balance.")
+            await state.clear()
+            return
+
+        # Fetch price
+        await message.answer(f"Fetching current price for {target_asset}/USDT...")
+        exchange = ccxt.binance()
+        try:
+            ticker = await exchange.fetch_ticker(f'{target_asset}/USDT')
+            price = ticker['last']
+        except Exception as e:
+            logging.error(f"Error fetching price for {target_asset}: {e}")
+            await message.answer("Error fetching price. Please try again later.")
+            await state.clear()
+            return
+        finally:
+            await exchange.close()
+
+        amount_target = amount_usdt / price
+
+        # Update balances
+        try:
+            usdt_balance.amount -= amount_usdt
+            
+            stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == target_asset)
+            result = await session.execute(stmt)
+            target_balance = result.scalar_one_or_none()
+
+            if target_balance:
+                target_balance.amount += amount_target
+            else:
+                new_balance = Balance(user_id=user.id, asset=target_asset, amount=amount_target)
+                session.add(new_balance)
+
+            await session.commit()
+            
+            await message.answer(
+                f"Successfully swapped {amount_usdt:,.2f} USDT for {amount_target:.8f} {target_asset}!\n"
+                f"Rate: 1 {target_asset} = {price:,.2f} USDT"
+            )
+        except Exception as e:
+            await session.rollback()
+            logging.error(f"Database error during swap: {e}")
+            await message.answer("An error occurred during the swap. Please try again.")
+        finally:
+            await state.clear()
 
 async def main() -> None:
     # Initialize database

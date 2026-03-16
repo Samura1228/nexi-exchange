@@ -1,4 +1,4 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 def get_main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup(
@@ -8,10 +8,26 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="💼 Wallet"),
             ],
             [
+                KeyboardButton(text="💱 Exchange"),
                 KeyboardButton(text="⚙️ Settings"),
             ]
         ],
         resize_keyboard=True,
         input_field_placeholder="Choose an option..."
+    )
+    return keyboard
+def get_exchange_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="USDT to BTC", callback_data="swap_usdt_btc"),
+            ],
+            [
+                InlineKeyboardButton(text="USDT to ETH", callback_data="swap_usdt_eth"),
+            ],
+            [
+                InlineKeyboardButton(text="USDT to TON", callback_data="swap_usdt_ton"),
+            ]
+        ]
     )
     return keyboard
