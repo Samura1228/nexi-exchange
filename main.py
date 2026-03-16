@@ -8,7 +8,7 @@ from aiogram.fsm.state import State, StatesGroup
 from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
-import ccxt.async_support as ccxt
+import aiohttp
 from keyboards import get_main_keyboard, get_exchange_keyboard
 
 class ExchangeState(StatesGroup):
@@ -47,7 +47,7 @@ async def command_start_handler(message: types.Message) -> None:
 
             # Create initial balances
             initial_balances = [
-                Balance(user_id=new_user.id, asset='USDT', amount=10000.0),
+                Balance(user_id=new_user.id, asset='USDT', amount=0.0),
                 Balance(user_id=new_user.id, asset='BTC', amount=0.0),
                 Balance(user_id=new_user.id, asset='ETH', amount=0.0),
                 Balance(user_id=new_user.id, asset='TON', amount=0.0),
@@ -67,28 +67,25 @@ async def prices_handler(message: types.Message) -> None:
     """
     await message.answer("Fetching current prices...")
     
-    exchange = ccxt.binance()
     try:
-        # Fetch tickers concurrently
-        btc_ticker, eth_ticker = await asyncio.gather(
-            exchange.fetch_ticker('BTC/USDT'),
-            exchange.fetch_ticker('ETH/USDT')
-        )
-        
-        btc_price = btc_ticker['last']
-        eth_price = eth_ticker['last']
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://min-api.cryptocompare.com/data/pricemulti?fsyms=BTC,ETH,TON&tsyms=USDT') as resp:
+                data = await resp.json()
+                
+        btc_price = data.get('BTC', {}).get('USDT', 0)
+        eth_price = data.get('ETH', {}).get('USDT', 0)
+        ton_price = data.get('TON', {}).get('USDT', 0)
         
         response = (
             f"📈 **Current Prices:**\n\n"
             f"**BTC/USDT:** ${btc_price:,.2f}\n"
-            f"**ETH/USDT:** ${eth_price:,.2f}"
+            f"**ETH/USDT:** ${eth_price:,.2f}\n"
+            f"**TON/USDT:** ${ton_price:,.2f}"
         )
         await message.answer(response, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Error fetching prices: {e}")
         await message.answer("Sorry, I couldn't fetch the prices right now. Please try again later.")
-    finally:
-        await exchange.close()
 
 @dp.message(F.text == "💼 Wallet")
 async def wallet_handler(message: types.Message) -> None:
@@ -197,17 +194,18 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
 
         # Fetch price
         await message.answer(f"Fetching current price for {target_asset}/USDT...")
-        exchange = ccxt.binance()
         try:
-            ticker = await exchange.fetch_ticker(f'{target_asset}/USDT')
-            price = ticker['last']
+            async with aiohttp.ClientSession() as http_session:
+                async with http_session.get(f'https://min-api.cryptocompare.com/data/price?fsym={target_asset}&tsyms=USDT') as resp:
+                    data = await resp.json()
+                    price = data.get('USDT')
+                    if not price:
+                        raise ValueError(f"Could not get price for {target_asset}")
         except Exception as e:
             logging.error(f"Error fetching price for {target_asset}: {e}")
             await message.answer("Error fetching price. Please try again later.")
             await state.clear()
             return
-        finally:
-            await exchange.close()
 
         amount_target = amount_usdt / price
 
