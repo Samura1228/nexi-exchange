@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import aiohttp
-from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard, get_settings_keyboard
 from aiocryptopay import AioCryptoPay, Networks
 
 class ExchangeState(StatesGroup):
@@ -340,6 +340,24 @@ async def check_payment_handler(callback_query: types.CallbackQuery) -> None:
         logging.error(f"Error checking payment: {e}")
         await callback_query.answer("An error occurred while checking the payment.", show_alert=True)
 
+@dp.message(F.text == "⚙️ Settings")
+async def settings_handler(message: types.Message) -> None:
+    """
+    This handler receives messages with "⚙️ Settings" text
+    """
+    await message.answer(
+        "⚙️ **Settings Menu**\nChoose an option below:",
+        reply_markup=get_settings_keyboard()
+    )
+
+@dp.callback_query(F.data == "settings_my_id")
+async def settings_my_id_handler(callback_query: types.CallbackQuery) -> None:
+    await callback_query.message.answer(f"Your Telegram ID is: {callback_query.from_user.id}")
+    await callback_query.answer()
+
+@dp.callback_query(F.data == "settings_language")
+async def settings_language_handler(callback_query: types.CallbackQuery) -> None:
+    await callback_query.answer("Language selection coming soon!", show_alert=True)
 async def main() -> None:
     # Initialize database
     await init_db()

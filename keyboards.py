@@ -49,3 +49,15 @@ def get_exchange_keyboard() -> InlineKeyboardMarkup:
         ]
     )
     return keyboard
+def get_settings_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🆔 My Account ID", callback_data="settings_my_id"),
+            ],
+            [
+                InlineKeyboardButton(text="🌐 Language", callback_data="settings_language"),
+            ]
+        ]
+    )
+    return keyboard
