@@ -9,11 +9,29 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
             ],
             [
                 KeyboardButton(text="💱 Exchange"),
+                KeyboardButton(text="📥 Deposit"),
+            ],
+            [
                 KeyboardButton(text="⚙️ Settings"),
             ]
         ],
         resize_keyboard=True,
         input_field_placeholder="Choose an option..."
+    )
+    return keyboard
+
+def get_deposit_assets_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="USDT", callback_data="deposit_asset_USDT"),
+                InlineKeyboardButton(text="BTC", callback_data="deposit_asset_BTC"),
+            ],
+            [
+                InlineKeyboardButton(text="ETH", callback_data="deposit_asset_ETH"),
+                InlineKeyboardButton(text="TON", callback_data="deposit_asset_TON"),
+            ]
+        ]
     )
     return keyboard
 def get_exchange_keyboard() -> InlineKeyboardMarkup:

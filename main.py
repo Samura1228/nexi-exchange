@@ -9,10 +9,15 @@ from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import aiohttp
-from keyboards import get_main_keyboard, get_exchange_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard
+from aiocryptopay import AioCryptoPay, Networks
 
 class ExchangeState(StatesGroup):
     select_pair = State()
+    enter_amount = State()
+
+class DepositState(StatesGroup):
+    select_asset = State()
     enter_amount = State()
 
 # Load environment variables
@@ -25,6 +30,12 @@ if not BOT_TOKEN:
 # Initialize bot and dispatcher
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# Initialize Crypto Pay
+CRYPTOPAY_API_KEY = os.getenv("CRYPTOPAY_API_KEY")
+if not CRYPTOPAY_API_KEY:
+    raise ValueError("CRYPTOPAY_API_KEY is not set in the environment variables.")
+crypto = AioCryptoPay(token=CRYPTOPAY_API_KEY, network=Networks.MAIN_NET)
 
 @dp.message(CommandStart())
 async def command_start_handler(message: types.Message) -> None:
@@ -235,6 +246,99 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
             await message.answer("An error occurred during the swap. Please try again.")
         finally:
             await state.clear()
+
+@dp.message(F.text == "📥 Deposit")
+async def deposit_handler(message: types.Message, state: FSMContext) -> None:
+    """
+    This handler receives messages with "📥 Deposit" text
+    """
+    await message.answer(
+        "Select an asset to deposit:",
+        reply_markup=get_deposit_assets_keyboard()
+    )
+    await state.set_state(DepositState.select_asset)
+
+@dp.callback_query(DepositState.select_asset, F.data.startswith("deposit_asset_"))
+async def process_deposit_asset_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    asset = callback_query.data.split("_")[2].upper()
+    await state.update_data(deposit_asset=asset)
+    
+    await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+    await state.set_state(DepositState.enter_amount)
+    await callback_query.answer()
+
+@dp.message(DepositState.enter_amount)
+async def process_deposit_amount(message: types.Message, state: FSMContext) -> None:
+    try:
+        amount = float(message.text)
+        if amount <= 0:
+            raise ValueError("Amount must be positive.")
+    except ValueError:
+        await message.answer("Please enter a valid positive number.")
+        return
+
+    data = await state.get_data()
+    asset = data['deposit_asset']
+    
+    try:
+        invoice = await crypto.create_invoice(asset=asset, amount=amount)
+        
+        keyboard = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(text="Pay", url=invoice.bot_invoice_url)],
+                [types.InlineKeyboardButton(text="✅ Check Payment", callback_data=f"check_payment_{invoice.invoice_id}")]
+            ]
+        )
+        
+        await message.answer(
+            f"Please pay {amount} {asset} using the link below:",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logging.error(f"Error creating invoice: {e}")
+        await message.answer("An error occurred while creating the invoice. Please try again later.")
+    finally:
+        await state.clear()
+
+@dp.callback_query(F.data.startswith("check_payment_"))
+async def check_payment_handler(callback_query: types.CallbackQuery) -> None:
+    invoice_id = int(callback_query.data.split("_")[2])
+    user_id = callback_query.from_user.id
+    
+    try:
+        invoices = await crypto.get_invoices(invoice_ids=invoice_id)
+        if not invoices:
+            await callback_query.answer("Invoice not found.", show_alert=True)
+            return
+            
+        invoice = invoices[0]
+        
+        if invoice.status == 'paid':
+            async with async_session() as session:
+                stmt = select(User).where(User.telegram_id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == invoice.asset)
+                    result = await session.execute(stmt)
+                    balance = result.scalar_one_or_none()
+                    
+                    if balance:
+                        balance.amount += float(invoice.amount)
+                    else:
+                        new_balance = Balance(user_id=user.id, asset=invoice.asset, amount=float(invoice.amount))
+                        session.add(new_balance)
+                        
+                    await session.commit()
+                    await callback_query.message.edit_text(f"✅ Payment of {invoice.amount} {invoice.asset} received! Your balance has been updated.")
+                else:
+                    await callback_query.answer("User not found in database.", show_alert=True)
+        else:
+            await callback_query.answer("Payment is still pending.", show_alert=True)
+    except Exception as e:
+        logging.error(f"Error checking payment: {e}")
+        await callback_query.answer("An error occurred while checking the payment.", show_alert=True)
 
 async def main() -> None:
     # Initialize database
