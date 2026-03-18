@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import aiohttp
-from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard, get_settings_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard
 from aiocryptopay import AioCryptoPay, Networks
 
 class ExchangeState(StatesGroup):
@@ -17,8 +17,9 @@ class ExchangeState(StatesGroup):
     enter_amount = State()
 
 class DepositState(StatesGroup):
-    select_asset = State()
-    enter_amount = State()
+    method = State()
+    asset = State()
+    amount = State()
 
 # Load environment variables
 load_dotenv()
@@ -253,21 +254,33 @@ async def deposit_handler(message: types.Message, state: FSMContext) -> None:
     This handler receives messages with "📥 Deposit" text
     """
     await message.answer(
+        "Select a deposit method:",
+        reply_markup=get_deposit_method_keyboard()
+    )
+    await state.set_state(DepositState.method)
+
+@dp.callback_query(DepositState.method, F.data.startswith("dep_method_"))
+async def process_deposit_method_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    method = callback_query.data.split("_")[2]
+    await state.update_data(method=method)
+    
+    await callback_query.message.answer(
         "Select an asset to deposit:",
         reply_markup=get_deposit_assets_keyboard()
     )
-    await state.set_state(DepositState.select_asset)
-
-@dp.callback_query(DepositState.select_asset, F.data.startswith("deposit_asset_"))
-async def process_deposit_asset_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
-    asset = callback_query.data.split("_")[2].upper()
-    await state.update_data(deposit_asset=asset)
-    
-    await callback_query.message.answer(f"How much {asset} do you want to deposit?")
-    await state.set_state(DepositState.enter_amount)
+    await state.set_state(DepositState.asset)
     await callback_query.answer()
 
-@dp.message(DepositState.enter_amount)
+@dp.callback_query(DepositState.asset, F.data.startswith("deposit_asset_"))
+async def process_deposit_asset_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    asset = callback_query.data.split("_")[2].upper()
+    await state.update_data(asset=asset)
+    
+    await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+    await state.set_state(DepositState.amount)
+    await callback_query.answer()
+
+@dp.message(DepositState.amount)
 async def process_deposit_amount(message: types.Message, state: FSMContext) -> None:
     try:
         amount = float(message.text)
@@ -278,30 +291,73 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
         return
 
     data = await state.get_data()
-    asset = data['deposit_asset']
+    asset = data['asset']
+    method = data['method']
     
-    try:
-        invoice = await crypto.create_invoice(asset=asset, amount=amount)
-        
-        keyboard = types.InlineKeyboardMarkup(
-            inline_keyboard=[
-                [types.InlineKeyboardButton(text="Pay", url=invoice.bot_invoice_url)],
-                [types.InlineKeyboardButton(text="✅ Check Payment", callback_data=f"check_payment_{invoice.invoice_id}")]
-            ]
-        )
-        
-        await message.answer(
-            f"Please pay {amount} {asset} using the link below:",
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        logging.error(f"Error creating invoice: {e}")
-        await message.answer("An error occurred while creating the invoice. Please try again later.")
-    finally:
-        await state.clear()
+    if method == 'cp':
+        try:
+            invoice = await crypto.create_invoice(asset=asset, amount=amount)
+            
+            keyboard = types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [types.InlineKeyboardButton(text="Pay", url=invoice.bot_invoice_url)],
+                    [types.InlineKeyboardButton(text="✅ Check Payment", callback_data=f"check_cp_{invoice.invoice_id}")]
+                ]
+            )
+            
+            await message.answer(
+                f"Please pay {amount} {asset} using the link below:",
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            logging.error(f"Error creating invoice: {e}")
+            await message.answer("An error occurred while creating the invoice. Please try again later.")
+        finally:
+            await state.clear()
+    elif method == 'np':
+        try:
+            headers = {
+                "x-api-key": os.getenv("NOWPAYMENTS_API_KEY"),
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "price_amount": amount,
+                "price_currency": asset.lower(),
+                "pay_currency": asset.lower(),
+                "order_id": str(message.from_user.id)
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post('https://api.nowpayments.io/v1/payment', headers=headers, json=payload) as resp:
+                    resp_data = await resp.json()
+                    
+            if 'payment_id' not in resp_data:
+                logging.error(f"NowPayments API error: {resp_data}")
+                await message.answer("An error occurred while creating the payment. Please try again later.")
+                return
 
-@dp.callback_query(F.data.startswith("check_payment_"))
-async def check_payment_handler(callback_query: types.CallbackQuery) -> None:
+            payment_id = resp_data['payment_id']
+            pay_address = resp_data['pay_address']
+            pay_amount = resp_data['pay_amount']
+            
+            keyboard = types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [types.InlineKeyboardButton(text="✅ Check Payment", callback_data=f"check_np_{payment_id}")]
+                ]
+            )
+            
+            await message.answer(
+                f"Please send EXACTLY `{pay_amount}` {asset} to this address:\n\n`{pay_address}`\n\n*(Tap the address to copy it)*",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logging.error(f"Error creating NowPayments invoice: {e}")
+            await message.answer("An error occurred while creating the invoice. Please try again later.")
+        finally:
+            await state.clear()
+
+@dp.callback_query(F.data.startswith("check_cp_"))
+async def check_cp_payment_handler(callback_query: types.CallbackQuery) -> None:
     invoice_id = int(callback_query.data.split("_")[2])
     user_id = callback_query.from_user.id
     
@@ -338,6 +394,55 @@ async def check_payment_handler(callback_query: types.CallbackQuery) -> None:
             await callback_query.answer("Payment is still pending.", show_alert=True)
     except Exception as e:
         logging.error(f"Error checking payment: {e}")
+        await callback_query.answer("An error occurred while checking the payment.", show_alert=True)
+
+@dp.callback_query(F.data.startswith("check_np_"))
+async def check_np_payment_handler(callback_query: types.CallbackQuery) -> None:
+    payment_id = callback_query.data.split("_")[2]
+    user_id = callback_query.from_user.id
+    
+    try:
+        headers = {
+            "x-api-key": os.getenv("NOWPAYMENTS_API_KEY")
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f'https://api.nowpayments.io/v1/payment/{payment_id}', headers=headers) as resp:
+                resp_data = await resp.json()
+                
+        if 'payment_status' not in resp_data:
+            await callback_query.answer("Payment not found.", show_alert=True)
+            return
+            
+        status = resp_data['payment_status']
+        
+        if status in ['finished', 'confirmed']:
+            asset = resp_data['pay_currency'].upper()
+            amount = float(resp_data['pay_amount'])
+            
+            async with async_session() as session:
+                stmt = select(User).where(User.telegram_id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == asset)
+                    result = await session.execute(stmt)
+                    balance = result.scalar_one_or_none()
+                    
+                    if balance:
+                        balance.amount += amount
+                    else:
+                        new_balance = Balance(user_id=user.id, asset=asset, amount=amount)
+                        session.add(new_balance)
+                        
+                    await session.commit()
+                    await callback_query.message.edit_text(f"✅ Payment of {amount} {asset} received! Your balance has been updated.")
+                else:
+                    await callback_query.answer("User not found in database.", show_alert=True)
+        else:
+            await callback_query.answer(f"Payment is still pending. Status: {status}", show_alert=True)
+    except Exception as e:
+        logging.error(f"Error checking NowPayments payment: {e}")
         await callback_query.answer("An error occurred while checking the payment.", show_alert=True)
 
 @dp.message(F.text == "⚙️ Settings")

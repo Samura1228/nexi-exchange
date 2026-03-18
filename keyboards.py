@@ -20,6 +20,18 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     )
     return keyboard
 
+def get_deposit_method_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔵 Telegram Wallet (Crypto Pay)", callback_data="dep_method_cp"),
+            ],
+            [
+                InlineKeyboardButton(text="🦊 External Wallet (NowPayments)", callback_data="dep_method_np"),
+            ]
+        ]
+    )
+    return keyboard
 def get_deposit_assets_keyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
