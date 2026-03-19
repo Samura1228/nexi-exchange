@@ -293,7 +293,23 @@ async def process_deposit_asset_selection(callback_query: types.CallbackQuery, s
         await state.set_state(DepositState.network)
     else:
         await state.update_data(network=None)
-        await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+        if method == 'np':
+            currency = asset.lower()
+            headers = {"x-api-key": NOWPAYMENTS_API_KEY}
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f'https://api.nowpayments.io/v1/min-amount?currency_from={currency}&currency_to={currency}', headers=headers) as resp:
+                        resp_data = await resp.json()
+                        min_amount = resp_data.get('min_amount')
+                if min_amount:
+                    await callback_query.message.answer(f"How much {asset} do you want to deposit?\n\n*(Minimum: {min_amount} {asset})*", parse_mode="Markdown")
+                else:
+                    await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+            except Exception as e:
+                logging.error(f"Error fetching min amount: {e}")
+                await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+        else:
+            await callback_query.message.answer(f"How much {asset} do you want to deposit?")
         await state.set_state(DepositState.amount)
         
     await callback_query.answer()
@@ -305,8 +321,26 @@ async def process_deposit_network_selection(callback_query: types.CallbackQuery,
     
     data = await state.get_data()
     asset = data.get('asset')
+    method = data.get('method')
     
-    await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+    if method == 'np':
+        currency = network.lower()
+        headers = {"x-api-key": NOWPAYMENTS_API_KEY}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f'https://api.nowpayments.io/v1/min-amount?currency_from={currency}&currency_to={currency}', headers=headers) as resp:
+                    resp_data = await resp.json()
+                    min_amount = resp_data.get('min_amount')
+            if min_amount:
+                await callback_query.message.answer(f"How much {asset} do you want to deposit?\n\n*(Minimum: {min_amount} {asset})*", parse_mode="Markdown")
+            else:
+                await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+        except Exception as e:
+            logging.error(f"Error fetching min amount: {e}")
+            await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+    else:
+        await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+        
     await state.set_state(DepositState.amount)
     await callback_query.answer()
 
@@ -340,10 +374,10 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                 f"Please pay {amount} {asset} using the link below:",
                 reply_markup=keyboard
             )
+            await state.clear()
         except Exception as e:
             logging.error(f"Error creating invoice: {e}")
             await message.answer("An error occurred while creating the invoice. Please try again later.")
-        finally:
             await state.clear()
     elif method == 'np':
         try:
@@ -365,8 +399,17 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                     resp_data = await resp.json()
                     
             if 'payment_id' not in resp_data:
+                if resp_data.get('error') == 'AMOUNT_MINIMAL_ERROR':
+                    error_msg = resp_data.get('message', '')
+                    import re
+                    match = re.search(r'Minimal amount is ([\d.]+)', error_msg)
+                    min_amount = match.group(1) if match else "the required minimum"
+                    await message.answer(f"❌ The amount you entered is too low. The minimum deposit is {min_amount} {asset}. Please try again.")
+                    return
+                
                 logging.error(f"NowPayments API error: {resp_data}")
                 await message.answer("An error occurred while creating the payment. Please try again later.")
+                await state.clear()
                 return
 
             payment_id = resp_data['payment_id']
@@ -384,10 +427,10 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
+            await state.clear()
         except Exception as e:
             logging.error(f"Error creating NowPayments invoice: {e}")
             await message.answer("An error occurred while creating the invoice. Please try again later.")
-        finally:
             await state.clear()
 
 @dp.callback_query(F.data.startswith("check_cp_"))
