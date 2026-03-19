@@ -32,6 +32,11 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Initialize NowPayments
+NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY")
+if not NOWPAYMENTS_API_KEY:
+    raise ValueError("NOWPAYMENTS_API_KEY is not set in the environment variables.")
+
 # Initialize Crypto Pay
 CRYPTOPAY_API_KEY = os.getenv("CRYPTOPAY_API_KEY")
 if not CRYPTOPAY_API_KEY:
@@ -317,7 +322,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
     elif method == 'np':
         try:
             headers = {
-                "x-api-key": os.getenv("NOWPAYMENTS_API_KEY"),
+                "x-api-key": NOWPAYMENTS_API_KEY,
                 "Content-Type": "application/json"
             }
             payload = {
@@ -403,7 +408,7 @@ async def check_np_payment_handler(callback_query: types.CallbackQuery) -> None:
     
     try:
         headers = {
-            "x-api-key": os.getenv("NOWPAYMENTS_API_KEY")
+            "x-api-key": NOWPAYMENTS_API_KEY
         }
         async with aiohttp.ClientSession() as session:
             async with session.get(f'https://api.nowpayments.io/v1/payment/{payment_id}', headers=headers) as resp:
