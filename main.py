@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import aiohttp
-from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard
 from aiocryptopay import AioCryptoPay, Networks
 
 class ExchangeState(StatesGroup):
@@ -19,6 +19,7 @@ class ExchangeState(StatesGroup):
 class DepositState(StatesGroup):
     method = State()
     asset = State()
+    network = State()
     amount = State()
 
 # Load environment variables
@@ -281,6 +282,30 @@ async def process_deposit_asset_selection(callback_query: types.CallbackQuery, s
     asset = callback_query.data.split("_")[2].upper()
     await state.update_data(asset=asset)
     
+    data = await state.get_data()
+    method = data.get('method')
+    
+    if method == 'np' and asset == 'USDT':
+        await callback_query.message.answer(
+            "Select the network for your USDT deposit:",
+            reply_markup=get_usdt_network_keyboard()
+        )
+        await state.set_state(DepositState.network)
+    else:
+        await state.update_data(network=None)
+        await callback_query.message.answer(f"How much {asset} do you want to deposit?")
+        await state.set_state(DepositState.amount)
+        
+    await callback_query.answer()
+
+@dp.callback_query(DepositState.network, F.data.startswith("net_"))
+async def process_deposit_network_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    network = callback_query.data.split("_")[1]
+    await state.update_data(network=network)
+    
+    data = await state.get_data()
+    asset = data.get('asset')
+    
     await callback_query.message.answer(f"How much {asset} do you want to deposit?")
     await state.set_state(DepositState.amount)
     await callback_query.answer()
@@ -298,6 +323,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
     data = await state.get_data()
     asset = data['asset']
     method = data['method']
+    network = data.get('network')
     
     if method == 'cp':
         try:
@@ -325,10 +351,13 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                 "x-api-key": NOWPAYMENTS_API_KEY,
                 "Content-Type": "application/json"
             }
+            pay_currency = network if network else asset.lower()
+            price_currency = "usdt" if asset == "USDT" else asset.lower()
+            
             payload = {
                 "price_amount": amount,
-                "price_currency": asset.lower(),
-                "pay_currency": asset.lower(),
+                "price_currency": price_currency,
+                "pay_currency": pay_currency,
                 "order_id": str(message.from_user.id)
             }
             async with aiohttp.ClientSession() as session:

@@ -46,6 +46,22 @@ def get_deposit_assets_keyboard() -> InlineKeyboardMarkup:
         ]
     )
     return keyboard
+def get_usdt_network_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Tron (TRC20)", callback_data="net_usdttx"),
+            ],
+            [
+                InlineKeyboardButton(text="Ethereum (ERC20)", callback_data="net_usdt"),
+            ],
+            [
+                InlineKeyboardButton(text="Binance Smart Chain (BEP20)", callback_data="net_usdtbsc"),
+            ]
+        ]
+    )
+    return keyboard
+
 def get_exchange_keyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
