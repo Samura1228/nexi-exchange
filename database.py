@@ -7,7 +7,7 @@ from typing import List
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./bot.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:sZXuCHMdyzrwoBzrkYOLKZfAoUtWnUCO@postgres.railway.internal:5432/railway")
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
