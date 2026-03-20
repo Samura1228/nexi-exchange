@@ -9,8 +9,13 @@ from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import aiohttp
-from keyboards import get_main_keyboard, get_exchange_keyboard, get_exchange_to_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard, get_exchange_to_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard, get_withdraw_asset_keyboard
 from aiocryptopay import AioCryptoPay, Networks
+
+class WithdrawState(StatesGroup):
+    asset = State()
+    address = State()
+    amount = State()
 
 class ExchangeState(StatesGroup):
     from_asset = State()
@@ -543,6 +548,92 @@ async def check_np_payment_handler(callback_query: types.CallbackQuery) -> None:
     except Exception as e:
         logging.error(f"Error checking NowPayments payment: {e}")
         await callback_query.answer("An error occurred while checking the payment.", show_alert=True)
+
+@dp.message(F.text == "📤 Withdraw")
+async def withdraw_handler(message: types.Message, state: FSMContext) -> None:
+    """
+    This handler receives messages with "📤 Withdraw" text
+    """
+    await message.answer(
+        "Select an asset to withdraw:",
+        reply_markup=get_withdraw_asset_keyboard()
+    )
+    await state.set_state(WithdrawState.asset)
+
+@dp.callback_query(WithdrawState.asset, F.data.startswith("with_asset_"))
+async def process_withdraw_asset_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    asset = callback_query.data.split("_")[2].upper()
+    await state.update_data(asset=asset)
+    
+    await callback_query.message.answer(f"Please enter your {asset} wallet address:")
+    await state.set_state(WithdrawState.address)
+    await callback_query.answer()
+
+@dp.message(WithdrawState.address)
+async def process_withdraw_address(message: types.Message, state: FSMContext) -> None:
+    address = message.text
+    await state.update_data(address=address)
+    
+    data = await state.get_data()
+    asset = data['asset']
+    
+    await message.answer(f"How much {asset} do you want to withdraw?")
+    await state.set_state(WithdrawState.amount)
+
+@dp.message(WithdrawState.amount)
+async def process_withdraw_amount(message: types.Message, state: FSMContext) -> None:
+    try:
+        amount = float(message.text)
+        if amount <= 0:
+            raise ValueError("Amount must be positive.")
+    except ValueError:
+        await message.answer("Please enter a valid positive number.")
+        return
+
+    data = await state.get_data()
+    asset = data['asset']
+    address = data['address']
+    user_id = message.from_user.id
+
+    async with async_session() as session:
+        # Get user
+        stmt = select(User).where(User.telegram_id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            await message.answer("User not found. Please use /start to register.")
+            await state.clear()
+            return
+
+        # Check balance
+        stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == asset)
+        result = await session.execute(stmt)
+        balance = result.scalar_one_or_none()
+
+        if not balance or balance.amount < amount:
+            await message.answer(f"Insufficient {asset} balance.")
+            await state.clear()
+            return
+
+        # Deduct balance
+        try:
+            balance.amount -= amount
+            await session.commit()
+            
+            await message.answer(
+                f"✅ Withdrawal request submitted!\n\n"
+                f"Amount: {amount} {asset}\n"
+                f"Address: {address}\n\n"
+                f"*Note: Withdrawals are processed manually by admins.*",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            await session.rollback()
+            logging.error(f"Database error during withdrawal: {e}")
+            await message.answer("An error occurred during the withdrawal. Please try again.")
+        finally:
+            await state.clear()
 
 @dp.message(F.text == "⚙️ Settings")
 async def settings_handler(message: types.Message) -> None:

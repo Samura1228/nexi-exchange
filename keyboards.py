@@ -12,6 +12,7 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="📥 Deposit"),
             ],
             [
+                KeyboardButton(text="📤 Withdraw"),
                 KeyboardButton(text="⚙️ Settings"),
             ]
         ],
@@ -100,6 +101,21 @@ def get_settings_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="🌐 Language", callback_data="settings_language"),
+            ]
+        ]
+    )
+    return keyboard
+
+def get_withdraw_asset_keyboard() -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="USDT", callback_data="with_asset_usdt"),
+                InlineKeyboardButton(text="BTC", callback_data="with_asset_btc"),
+            ],
+            [
+                InlineKeyboardButton(text="ETH", callback_data="with_asset_eth"),
+                InlineKeyboardButton(text="TON", callback_data="with_asset_ton"),
             ]
         ]
     )
