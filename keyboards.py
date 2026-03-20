@@ -66,16 +66,31 @@ def get_exchange_keyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="USDT to BTC", callback_data="swap_usdt_btc"),
+                InlineKeyboardButton(text="USDT", callback_data="exch_from_usdt"),
+                InlineKeyboardButton(text="BTC", callback_data="exch_from_btc"),
             ],
             [
-                InlineKeyboardButton(text="USDT to ETH", callback_data="swap_usdt_eth"),
-            ],
-            [
-                InlineKeyboardButton(text="USDT to TON", callback_data="swap_usdt_ton"),
+                InlineKeyboardButton(text="ETH", callback_data="exch_from_eth"),
+                InlineKeyboardButton(text="TON", callback_data="exch_from_ton"),
             ]
         ]
     )
+    return keyboard
+
+def get_exchange_to_keyboard(from_asset: str) -> InlineKeyboardMarkup:
+    assets = ["usdt", "btc", "eth", "ton"]
+    if from_asset.lower() in assets:
+        assets.remove(from_asset.lower())
+    
+    buttons = []
+    for asset in assets:
+        buttons.append(InlineKeyboardButton(text=asset.upper(), callback_data=f"exch_to_{asset}"))
+    
+    inline_keyboard = []
+    for i in range(0, len(buttons), 2):
+        inline_keyboard.append(buttons[i:i+2])
+        
+    keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
     return keyboard
 def get_settings_keyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(

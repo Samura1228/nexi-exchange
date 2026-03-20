@@ -9,12 +9,13 @@ from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import aiohttp
-from keyboards import get_main_keyboard, get_exchange_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard, get_exchange_to_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard
 from aiocryptopay import AioCryptoPay, Networks
 
 class ExchangeState(StatesGroup):
-    select_pair = State()
-    enter_amount = State()
+    from_asset = State()
+    to_asset = State()
+    amount = State()
 
 class DepositState(StatesGroup):
     method = State()
@@ -161,32 +162,48 @@ async def exchange_handler(message: types.Message, state: FSMContext) -> None:
     This handler receives messages with "💱 Exchange" text
     """
     await message.answer(
-        "Select a trading pair:",
+        "What do you want to exchange FROM?",
         reply_markup=get_exchange_keyboard()
     )
-    await state.set_state(ExchangeState.select_pair)
+    await state.set_state(ExchangeState.from_asset)
 
-@dp.callback_query(ExchangeState.select_pair, F.data.startswith("swap_usdt_"))
-async def process_pair_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
-    target_asset = callback_query.data.split("_")[2].upper()
-    await state.update_data(target_asset=target_asset)
+@dp.callback_query(ExchangeState.from_asset, F.data.startswith("exch_from_"))
+async def process_from_asset_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    from_asset = callback_query.data.split("_")[2].upper()
+    await state.update_data(from_asset=from_asset)
     
-    await callback_query.message.answer(f"How much USDT do you want to swap for {target_asset}?")
-    await state.set_state(ExchangeState.enter_amount)
+    await callback_query.message.answer(
+        f"What do you want to exchange {from_asset} TO?",
+        reply_markup=get_exchange_to_keyboard(from_asset)
+    )
+    await state.set_state(ExchangeState.to_asset)
     await callback_query.answer()
 
-@dp.message(ExchangeState.enter_amount)
-async def process_amount(message: types.Message, state: FSMContext) -> None:
+@dp.callback_query(ExchangeState.to_asset, F.data.startswith("exch_to_"))
+async def process_to_asset_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    to_asset = callback_query.data.split("_")[2].upper()
+    await state.update_data(to_asset=to_asset)
+    
+    data = await state.get_data()
+    from_asset = data['from_asset']
+    
+    await callback_query.message.answer(f"How much {from_asset} do you want to swap for {to_asset}?")
+    await state.set_state(ExchangeState.amount)
+    await callback_query.answer()
+
+@dp.message(ExchangeState.amount)
+async def process_exchange_amount(message: types.Message, state: FSMContext) -> None:
     try:
-        amount_usdt = float(message.text)
-        if amount_usdt <= 0:
+        amount_from = float(message.text)
+        if amount_from <= 0:
             raise ValueError("Amount must be positive.")
     except ValueError:
         await message.answer("Please enter a valid positive number.")
         return
 
     data = await state.get_data()
-    target_asset = data['target_asset']
+    from_asset = data['from_asset']
+    to_asset = data['to_asset']
     user_id = message.from_user.id
 
     async with async_session() as session:
@@ -200,52 +217,57 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
             await state.clear()
             return
 
-        # Check USDT balance
-        stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == 'USDT')
+        # Check from_asset balance
+        stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == from_asset)
         result = await session.execute(stmt)
-        usdt_balance = result.scalar_one_or_none()
+        from_balance = result.scalar_one_or_none()
 
-        if not usdt_balance or usdt_balance.amount < amount_usdt:
-            await message.answer("Insufficient USDT balance.")
+        if not from_balance or from_balance.amount < amount_from:
+            await message.answer(f"Insufficient {from_asset} balance.")
             await state.clear()
             return
 
         # Fetch price
-        await message.answer(f"Fetching current price for {target_asset}/USDT...")
+        await message.answer(f"Fetching current prices for {from_asset} and {to_asset}...")
         try:
             async with aiohttp.ClientSession() as http_session:
-                async with http_session.get(f'https://min-api.cryptocompare.com/data/price?fsym={target_asset}&tsyms=USDT') as resp:
-                    data = await resp.json()
-                    price = data.get('USDT')
-                    if not price:
-                        raise ValueError(f"Could not get price for {target_asset}")
+                async with http_session.get(f'https://min-api.cryptocompare.com/data/pricemulti?fsyms={from_asset},{to_asset}&tsyms=USDT') as resp:
+                    price_data = await resp.json()
+                    
+                    from_price_usdt = price_data.get(from_asset, {}).get('USDT')
+                    to_price_usdt = price_data.get(to_asset, {}).get('USDT')
+                    
+                    if not from_price_usdt or not to_price_usdt:
+                        raise ValueError(f"Could not get prices for {from_asset} or {to_asset}")
         except Exception as e:
-            logging.error(f"Error fetching price for {target_asset}: {e}")
-            await message.answer("Error fetching price. Please try again later.")
+            logging.error(f"Error fetching prices for {from_asset} and {to_asset}: {e}")
+            await message.answer("Error fetching prices. Please try again later.")
             await state.clear()
             return
 
-        amount_target = amount_usdt / price
+        # Calculate exchange rate and target amount
+        exchange_rate = from_price_usdt / to_price_usdt
+        amount_to = amount_from * exchange_rate
 
         # Update balances
         try:
-            usdt_balance.amount -= amount_usdt
+            from_balance.amount -= amount_from
             
-            stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == target_asset)
+            stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == to_asset)
             result = await session.execute(stmt)
-            target_balance = result.scalar_one_or_none()
+            to_balance = result.scalar_one_or_none()
 
-            if target_balance:
-                target_balance.amount += amount_target
+            if to_balance:
+                to_balance.amount += amount_to
             else:
-                new_balance = Balance(user_id=user.id, asset=target_asset, amount=amount_target)
+                new_balance = Balance(user_id=user.id, asset=to_asset, amount=amount_to)
                 session.add(new_balance)
 
             await session.commit()
             
             await message.answer(
-                f"Successfully swapped {amount_usdt:,.2f} USDT for {amount_target:.8f} {target_asset}!\n"
-                f"Rate: 1 {target_asset} = {price:,.2f} USDT"
+                f"Successfully swapped {amount_from:,.8f} {from_asset} for {amount_to:,.8f} {to_asset}!\n"
+                f"Rate: 1 {from_asset} = {exchange_rate:,.8f} {to_asset}"
             )
         except Exception as e:
             await session.rollback()
