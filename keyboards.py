@@ -25,10 +25,10 @@ def get_deposit_method_keyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🔵 Telegram Wallet (Crypto Pay)", callback_data="dep_method_cp"),
+                InlineKeyboardButton(text="🔵 Telegram Wallet (Crypto Bot)", callback_data="dep_method_cp"),
             ],
             [
-                InlineKeyboardButton(text="🦊 External Wallet (NowPayments)", callback_data="dep_method_np"),
+                InlineKeyboardButton(text="🦊 External Wallet (Other wallets)", callback_data="dep_method_np"),
             ]
         ]
     )
@@ -116,6 +116,16 @@ def get_withdraw_asset_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="ETH", callback_data="with_asset_eth"),
                 InlineKeyboardButton(text="TON", callback_data="with_asset_ton"),
+            ]
+        ]
+    )
+    return keyboard
+def get_admin_withdraw_keyboard(user_id: int, asset: str, amount: float) -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Paid", callback_data=f"admin_paid_{user_id}_{asset}_{amount}"),
+                InlineKeyboardButton(text="❌ Reject", callback_data=f"admin_rej_{user_id}_{asset}_{amount}"),
             ]
         ]
     )

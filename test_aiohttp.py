@@ -1,8 +1,12 @@
-import aiohttp
 import asyncio
+from aiocryptopay import AioCryptoPay
 
 async def main():
-    async with aiohttp.ClientSession() as s:
-        await s.post("http://example.com", headers={"x-api-key": None})
+    crypto = AioCryptoPay('12345:test')
+    try:
+        res = await crypto.get_invoices(invoice_ids=123)
+        print(type(res))
+    except Exception as e:
+        print(f"Error: {e}")
 
 asyncio.run(main())

@@ -9,13 +9,13 @@ from dotenv import load_dotenv
 from database import init_db, async_session, User, Balance
 from sqlalchemy import select
 import aiohttp
-from keyboards import get_main_keyboard, get_exchange_keyboard, get_exchange_to_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard, get_withdraw_asset_keyboard
+from keyboards import get_main_keyboard, get_exchange_keyboard, get_exchange_to_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard, get_withdraw_asset_keyboard, get_admin_withdraw_keyboard
 from aiocryptopay import AioCryptoPay, Networks
 
 class WithdrawState(StatesGroup):
     asset = State()
-    address = State()
     amount = State()
+    address = State()
 
 class ExchangeState(StatesGroup):
     from_asset = State()
@@ -466,13 +466,11 @@ async def check_cp_payment_handler(callback_query: types.CallbackQuery) -> None:
     user_id = callback_query.from_user.id
     
     try:
-        invoices = await crypto.get_invoices(invoice_ids=invoice_id)
-        if not invoices:
+        invoice = await crypto.get_invoices(invoice_ids=invoice_id)
+        if not invoice:
             await callback_query.answer("Invoice not found.", show_alert=True)
             return
             
-        invoice = invoices[0]
-        
         if invoice.status == 'paid':
             async with async_session() as session:
                 stmt = select(User).where(User.telegram_id == user_id)
@@ -497,7 +495,8 @@ async def check_cp_payment_handler(callback_query: types.CallbackQuery) -> None:
         else:
             await callback_query.answer("Payment is still pending.", show_alert=True)
     except Exception as e:
-        logging.error(f"Error checking payment: {e}")
+        import traceback
+        logging.error(f"Error checking payment: {e}\n{traceback.format_exc()}")
         await callback_query.answer("An error occurred while checking the payment.", show_alert=True)
 
 @dp.callback_query(F.data.startswith("check_np_"))
@@ -565,20 +564,9 @@ async def process_withdraw_asset_selection(callback_query: types.CallbackQuery, 
     asset = callback_query.data.split("_")[2].upper()
     await state.update_data(asset=asset)
     
-    await callback_query.message.answer(f"Please enter your {asset} wallet address:")
-    await state.set_state(WithdrawState.address)
-    await callback_query.answer()
-
-@dp.message(WithdrawState.address)
-async def process_withdraw_address(message: types.Message, state: FSMContext) -> None:
-    address = message.text
-    await state.update_data(address=address)
-    
-    data = await state.get_data()
-    asset = data['asset']
-    
-    await message.answer(f"How much {asset} do you want to withdraw?")
+    await callback_query.message.answer(f"How much {asset} do you want to withdraw?")
     await state.set_state(WithdrawState.amount)
+    await callback_query.answer()
 
 @dp.message(WithdrawState.amount)
 async def process_withdraw_amount(message: types.Message, state: FSMContext) -> None:
@@ -592,7 +580,6 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext) -> 
 
     data = await state.get_data()
     asset = data['asset']
-    address = data['address']
     user_id = message.from_user.id
 
     async with async_session() as session:
@@ -616,6 +603,41 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext) -> 
             await state.clear()
             return
 
+    await state.update_data(amount=amount)
+    await message.answer(f"Please enter your {asset} destination address:")
+    await state.set_state(WithdrawState.address)
+
+@dp.message(WithdrawState.address)
+async def process_withdraw_address(message: types.Message, state: FSMContext) -> None:
+    address = message.text
+    
+    data = await state.get_data()
+    asset = data['asset']
+    amount = data['amount']
+    user_id = message.from_user.id
+    username = message.from_user.username
+
+    async with async_session() as session:
+        # Get user
+        stmt = select(User).where(User.telegram_id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            await message.answer("User not found. Please use /start to register.")
+            await state.clear()
+            return
+
+        # Check balance again just in case
+        stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == asset)
+        result = await session.execute(stmt)
+        balance = result.scalar_one_or_none()
+
+        if not balance or balance.amount < amount:
+            await message.answer(f"Insufficient {asset} balance.")
+            await state.clear()
+            return
+
         # Deduct balance
         try:
             balance.amount -= amount
@@ -624,16 +646,107 @@ async def process_withdraw_amount(message: types.Message, state: FSMContext) -> 
             await message.answer(
                 f"✅ Withdrawal request submitted!\n\n"
                 f"Amount: {amount} {asset}\n"
-                f"Address: {address}\n\n"
+                f"Address: `{address}`\n\n"
                 f"*Note: Withdrawals are processed manually by admins.*",
                 parse_mode="Markdown"
             )
+            
+            # Notify Admin
+            admin_id = 6840070959
+            user_identifier = f"@{username}" if username else f"ID: {user_id}"
+            admin_msg = (
+                f"🚨 **New Withdrawal Request** 🚨\n\n"
+                f"**User:** {user_identifier}\n"
+                f"**Asset:** {asset}\n"
+                f"**Amount:** {amount}\n"
+                f"**Address:** `{address}`"
+            )
+            await bot.send_message(
+                chat_id=admin_id,
+                text=admin_msg,
+                parse_mode="Markdown",
+                reply_markup=get_admin_withdraw_keyboard(user_id, asset, amount)
+            )
+            
         except Exception as e:
             await session.rollback()
             logging.error(f"Database error during withdrawal: {e}")
             await message.answer("An error occurred during the withdrawal. Please try again.")
         finally:
             await state.clear()
+
+@dp.callback_query(F.data.startswith("admin_paid_"))
+async def admin_paid_handler(callback_query: types.CallbackQuery) -> None:
+    parts = callback_query.data.split("_")
+    user_id = int(parts[2])
+    asset = parts[3]
+    amount = float(parts[4])
+    
+    # Notify user
+    try:
+        await bot.send_message(
+            chat_id=user_id,
+            text=f"✅ Your withdrawal of {amount} {asset} has been processed and sent!"
+        )
+    except Exception as e:
+        logging.error(f"Failed to notify user {user_id} about paid withdrawal: {e}")
+        
+    # Update admin message
+    try:
+        await callback_query.message.edit_text(
+            text=callback_query.message.text + "\n\n✅ Status: PAID",
+            reply_markup=None
+        )
+    except Exception as e:
+        logging.error(f"Failed to edit admin message: {e}")
+    await callback_query.answer("Marked as paid.")
+
+@dp.callback_query(F.data.startswith("admin_rej_"))
+async def admin_reject_handler(callback_query: types.CallbackQuery) -> None:
+    parts = callback_query.data.split("_")
+    user_id = int(parts[2])
+    asset = parts[3]
+    amount = float(parts[4])
+    
+    # Refund user
+    async with async_session() as session:
+        stmt = select(User).where(User.telegram_id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if user:
+            stmt = select(Balance).where(Balance.user_id == user.id, Balance.asset == asset)
+            result = await session.execute(stmt)
+            balance = result.scalar_one_or_none()
+            
+            if balance:
+                balance.amount += amount
+                await session.commit()
+                
+                # Notify user
+                try:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=f"❌ Your withdrawal of {amount} {asset} was rejected. The funds have been returned to your balance."
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to notify user {user_id} about rejected withdrawal: {e}")
+            else:
+                await callback_query.answer("User balance not found for refund.", show_alert=True)
+                return
+        else:
+            await callback_query.answer("User not found for refund.", show_alert=True)
+            return
+            
+    # Update admin message
+    try:
+        await callback_query.message.edit_text(
+            text=callback_query.message.text + "\n\n❌ Status: REJECTED & REFUNDED",
+            reply_markup=None
+        )
+    except Exception as e:
+        logging.error(f"Failed to edit admin message: {e}")
+    await callback_query.answer("Marked as rejected and refunded.")
 
 @dp.message(F.text == "⚙️ Settings")
 async def settings_handler(message: types.Message) -> None:
