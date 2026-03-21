@@ -421,9 +421,11 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                 "pay_currency": pay_currency,
                 "order_id": str(message.from_user.id)
             }
+            logging.info(f"Sending NowPayments request with payload: {payload}")
             async with aiohttp.ClientSession() as session:
                 async with session.post('https://api.nowpayments.io/v1/payment', headers=headers, json=payload) as resp:
                     resp_data = await resp.json()
+                    logging.info(f"NowPayments API response status: {resp.status}, data: {resp_data}")
                     
             if 'payment_id' not in resp_data:
                 if resp_data.get('error') == 'AMOUNT_MINIMAL_ERROR':

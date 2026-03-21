@@ -51,7 +51,7 @@ def get_usdt_network_keyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Tron (TRC20)", callback_data="net_usdttx"),
+                InlineKeyboardButton(text="Tron (TRC20)", callback_data="net_usdtt"),
             ],
             [
                 InlineKeyboardButton(text="Ethereum (ERC20)", callback_data="net_usdt"),
