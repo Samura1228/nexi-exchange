@@ -4,3 +4,5 @@ python-dotenv
 asyncpg
 aiohttp
 aiocryptopay
+gspread
+google-auth

@@ -11,6 +11,7 @@ from sqlalchemy import select
 import aiohttp
 from keyboards import get_main_keyboard, get_exchange_keyboard, get_exchange_to_keyboard, get_deposit_assets_keyboard, get_settings_keyboard, get_deposit_method_keyboard, get_usdt_network_keyboard, get_withdraw_asset_keyboard, get_admin_withdraw_keyboard
 from aiocryptopay import AioCryptoPay, Networks
+from sheets import log_action
 
 class WithdrawState(StatesGroup):
     asset = State()
@@ -78,6 +79,8 @@ async def command_start_handler(message: types.Message) -> None:
             ]
             session.add_all(initial_balances)
             await session.commit()
+
+    log_action(user_id, username, "Start Bot", "User started the bot")
 
     await message.answer(
         f"Hello, {message.from_user.full_name}! Welcome to the Crypto Exchange Bot.",
@@ -270,6 +273,8 @@ async def process_exchange_amount(message: types.Message, state: FSMContext) -> 
 
             await session.commit()
             
+            log_action(user_id, message.from_user.username, "Exchange", f"Swapped {amount_from:,.8f} {from_asset} for {amount_to:,.8f} {to_asset}")
+
             await message.answer(
                 f"Successfully swapped {amount_from:,.8f} {from_asset} for {amount_to:,.8f} {to_asset}!\n"
                 f"Rate: 1 {from_asset} = {exchange_rate:,.8f} {to_asset}"
@@ -397,6 +402,8 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                 ]
             )
             
+            log_action(message.from_user.id, message.from_user.username, "Deposit Request", f"Requested {amount} {asset} via CryptoPay")
+
             await message.answer(
                 f"Please pay {amount} {asset} using the link below:",
                 reply_markup=keyboard
@@ -451,6 +458,8 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                 ]
             )
             
+            log_action(message.from_user.id, message.from_user.username, "Deposit Request", f"Requested {amount} {asset} via NowPayments")
+
             await message.answer(
                 f"Please send EXACTLY `{pay_amount}` {asset} to this address:\n\n`{pay_address}`\n\n*(Tap the address to copy it)*",
                 reply_markup=keyboard,
@@ -645,6 +654,8 @@ async def process_withdraw_address(message: types.Message, state: FSMContext) ->
             balance.amount -= amount
             await session.commit()
             
+            log_action(user_id, username, "Withdraw Request", f"Requested {amount} {asset} to {address}")
+
             await message.answer(
                 f"✅ Withdrawal request submitted!\n\n"
                 f"Amount: {amount} {asset}\n"
