@@ -413,7 +413,7 @@ async def process_deposit_amount(message: types.Message, state: FSMContext) -> N
                 "Content-Type": "application/json"
             }
             pay_currency = network if network else asset.lower()
-            price_currency = "usdt" if asset == "USDT" else asset.lower()
+            price_currency = pay_currency
             
             payload = {
                 "price_amount": amount,
