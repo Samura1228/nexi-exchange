@@ -1,10 +1,13 @@
+import logging
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import BigInteger, String, Numeric, DateTime, ForeignKey, func
+from sqlalchemy import BigInteger, String, Numeric, DateTime, ForeignKey, func, inspect, text
 from config import DATABASE_URL
 from typing import List, Optional
 from datetime import datetime
 from decimal import Decimal
+
+logger = logging.getLogger(__name__)
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -46,8 +49,66 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def reset_db():
-    """Drop all tables and recreate them. Use when schema has changed."""
+# Mapping from SQLAlchemy types to PostgreSQL DDL types
+def _sa_type_to_ddl(sa_type) -> str:
+    """Convert a SQLAlchemy column type to a PostgreSQL DDL string."""
+    type_name = type(sa_type).__name__
+    if type_name == "BigInteger":
+        return "BIGINT"
+    elif type_name == "String":
+        return "VARCHAR"
+    elif type_name == "Numeric":
+        p = getattr(sa_type, "precision", None)
+        s = getattr(sa_type, "scale", None)
+        if p and s:
+            return f"NUMERIC({p},{s})"
+        return "NUMERIC"
+    elif type_name == "DateTime":
+        if getattr(sa_type, "timezone", False):
+            return "TIMESTAMPTZ"
+        return "TIMESTAMP"
+    elif type_name == "Integer":
+        return "INTEGER"
+    elif type_name == "Boolean":
+        return "BOOLEAN"
+    elif type_name == "Text":
+        return "TEXT"
+    else:
+        return "VARCHAR"
+
+
+def _migrate_tables(connection):
+    """Inspect existing tables and ADD any missing columns. Never drops anything."""
+    inspector = inspect(connection)
+    existing_tables = inspector.get_table_names()
+
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in existing_tables:
+            # Table doesn't exist at all — create it
+            logger.info(f"  Creating new table: {table_name}")
+            table.create(connection)
+            continue
+
+        # Table exists — check for missing columns
+        existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
+        for column in table.columns:
+            if column.name not in existing_columns:
+                # Build ALTER TABLE ADD COLUMN statement
+                col_type = _sa_type_to_ddl(column.type)
+                nullable = "NULL" if column.nullable else "NOT NULL"
+                default = ""
+                if column.server_default is not None:
+                    default = f" DEFAULT {column.server_default.arg.text}"
+                elif column.nullable:
+                    default = " DEFAULT NULL"
+
+                stmt = f'ALTER TABLE "{table_name}" ADD COLUMN "{column.name}" {col_type} {nullable}{default}'
+                logger.info(f"  Adding column: {table_name}.{column.name} ({col_type})")
+                connection.execute(text(stmt))
+
+
+async def migrate_db():
+    """Safely migrate the database: create missing tables and add missing columns.
+    Never drops tables or columns — existing data is preserved."""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_tables)
