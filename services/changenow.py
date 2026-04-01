@@ -19,10 +19,19 @@ class ChangeNowService:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.request(method, url, headers=self.headers, params=params, json=json_data) as resp:
-                    data = await resp.json()
+                    # Use content_type=None to handle non-JSON error responses (e.g. text/plain 404s)
+                    try:
+                        data = await resp.json(content_type=None)
+                    except Exception:
+                        # If JSON parsing fails entirely, read as text
+                        text = await resp.text()
+                        logger.error(f"ChangeNow API non-JSON response: {resp.status} - {text}")
+                        return {"error": f"API error {resp.status}: {text}"}
+                    
                     if resp.status != 200:
-                        logger.error(f"ChangeNow API error: {resp.status} - {data}")
-                        return {"error": data.get("message", f"API error {resp.status}"), "status_code": resp.status}
+                        error_msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
+                        logger.error(f"ChangeNow API error: {resp.status} - {error_msg}")
+                        return {"error": error_msg, "status_code": resp.status}
                     return data
         except aiohttp.ClientError as e:
             logger.error(f"ChangeNow API connection error: {e}")
