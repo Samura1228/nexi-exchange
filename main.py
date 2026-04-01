@@ -3,6 +3,7 @@ import logging
 import os
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 
 from config import BOT_TOKEN
 from database import init_db, migrate_db
@@ -41,6 +42,13 @@ async def main() -> None:
     # Start background transaction poller
     poller_task = asyncio.create_task(poll_transactions(bot))
     logger.info("Transaction poller started")
+    
+    # Clear old bot commands and set new ones
+    await bot.delete_my_commands()
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Start the bot"),
+    ])
+    logger.info("Bot commands updated")
     
     # Start polling for Telegram updates
     logger.info("Bot starting...")
