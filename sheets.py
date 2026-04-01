@@ -4,11 +4,8 @@ import logging
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
-from dotenv import load_dotenv
 
-load_dotenv()
-
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+from config import SPREADSHEET_ID
 CREDENTIALS_FILE = "credentials.json"
 
 # Initialize Google Sheets client

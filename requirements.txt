@@ -3,6 +3,5 @@ sqlalchemy>=2.0.0
 python-dotenv
 asyncpg
 aiohttp
-aiocryptopay
 gspread
 google-auth
