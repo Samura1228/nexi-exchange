@@ -155,6 +155,7 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     loading_msg = await message.answer(f"⏳ Getting exchange rate for {amount} {from_display} → {to_display}...")
     
     estimate = await changenow.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
+    logger.info(f"ChangeNow estimate response: {estimate}")
     
     if "error" in estimate:
         await loading_msg.edit_text(
@@ -164,7 +165,8 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
         await state.clear()
         return
     
-    estimated_amount = float(estimate.get("estimatedAmount", 0))
+    # ChangeNow v2 API returns "toAmount"; fall back to "estimatedAmount" for compatibility
+    estimated_amount = float(estimate.get("toAmount") or estimate.get("estimatedAmount") or 0)
     
     if estimated_amount <= 0:
         await loading_msg.edit_text(
