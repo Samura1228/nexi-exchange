@@ -1,10 +1,11 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 
 from config import BOT_TOKEN
-from database import init_db
+from database import init_db, reset_db
 from handlers import start, exchange, history, settings
 from utils.poller import poll_transactions
 
@@ -28,9 +29,14 @@ async def main() -> None:
     dp.include_router(history.router)
     dp.include_router(settings.router)
     
-    # Initialize database
-    await init_db()
-    logger.info("Database initialized")
+    # Initialize database (reset tables if RESET_DB=true)
+    if os.getenv("RESET_DB", "false").lower() == "true":
+        logger.warning("⚠️ Resetting database tables...")
+        await reset_db()
+        logger.info("Database tables reset successfully")
+    else:
+        await init_db()
+        logger.info("Database initialized")
     
     # Start background transaction poller
     poller_task = asyncio.create_task(poll_transactions(bot))
