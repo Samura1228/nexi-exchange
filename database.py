@@ -98,7 +98,15 @@ def _migrate_tables(connection):
                 nullable = "NULL" if column.nullable else "NOT NULL"
                 default = ""
                 if column.server_default is not None:
-                    default = f" DEFAULT {column.server_default.arg.text}"
+                    # Compile the server_default to a SQL string for the current dialect
+                    default_arg = column.server_default.arg
+                    if hasattr(default_arg, 'text'):
+                        # It's a plain text clause (e.g. text("0"))
+                        default = f" DEFAULT {default_arg.text}"
+                    else:
+                        # It's a SQL function (e.g. func.now()) — compile it
+                        compiled = default_arg.compile(dialect=connection.dialect)
+                        default = f" DEFAULT {compiled}"
                 elif column.nullable:
                     default = " DEFAULT NULL"
 
