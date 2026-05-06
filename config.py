@@ -11,6 +11,10 @@ ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 MARKUP_PERCENT = float(os.getenv("MARKUP_PERCENT", "0.5"))  # 0.5% default markup on exchange rates
 
+# Referral system
+REFERRAL_PERCENT = float(os.getenv("REFERRAL_PERCENT", "30"))  # 30% of bot's markup goes to referrer
+BOT_USERNAME = os.getenv("BOT_USERNAME", "your_bot")  # For generating referral links
+
 # CS2 Skins feature (DMarket integration) — test mode
 DMARKET_API_KEY = os.getenv("DMARKET_API_KEY", "")
 DMARKET_API_SECRET = os.getenv("DMARKET_API_SECRET", "")

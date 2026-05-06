@@ -18,3 +18,8 @@ class SkinState(StatesGroup):
     select_crypto = State()    # User is selecting payment crypto
     enter_trade_url = State()  # User is entering Steam trade URL
     confirm = State()          # User is confirming the purchase
+
+
+class SupportState(StatesGroup):
+    """FSM states for the support chat flow."""
+    waiting_message = State()  # User is typing their support message

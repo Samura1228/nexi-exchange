@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from database import async_session, User, Transaction
 from keyboards.builders import get_back_to_start_keyboard
+from locales.texts import get_text
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -32,12 +33,14 @@ async def my_exchanges(callback_query: types.CallbackQuery) -> None:
         
         if not user:
             await callback_query.message.edit_text(
-                "📋 **My Exchanges**\n\nNo exchanges found. Start your first exchange!",
+                get_text("history_empty", "en"),
                 reply_markup=get_back_to_start_keyboard(),
                 parse_mode="Markdown"
             )
             await callback_query.answer()
             return
+        
+        lang = user.language or "en"
         
         stmt = (
             select(Transaction)
@@ -50,14 +53,14 @@ async def my_exchanges(callback_query: types.CallbackQuery) -> None:
     
     if not transactions:
         await callback_query.message.edit_text(
-            "📋 **My Exchanges**\n\nNo exchanges found. Start your first exchange!",
-            reply_markup=get_back_to_start_keyboard(),
+            get_text("history_empty", lang),
+            reply_markup=get_back_to_start_keyboard(lang=lang),
             parse_mode="Markdown"
         )
         await callback_query.answer()
         return
     
-    text = "📋 **My Recent Exchanges:**\n\n"
+    text = get_text("history_title", lang)
     for tx in transactions:
         emoji = STATUS_EMOJI.get(tx.status, "❓")
         amount_to_str = f"{tx.amount_to:.8g}" if tx.amount_to else f"~{tx.amount_expected:.8g}"
@@ -71,7 +74,7 @@ async def my_exchanges(callback_query: types.CallbackQuery) -> None:
     
     await callback_query.message.edit_text(
         text,
-        reply_markup=get_back_to_start_keyboard(),
+        reply_markup=get_back_to_start_keyboard(lang=lang),
         parse_mode="Markdown"
     )
     await callback_query.answer()

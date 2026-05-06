@@ -1,11 +1,11 @@
 import asyncio
 import logging
 from decimal import Decimal
-from aiogram import Router, types, F
+from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT
+from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT
 from database import async_session, User, Transaction
 from services.swapzone import swapzone
 from utils.states import ExchangeState
@@ -15,6 +15,7 @@ from keyboards.builders import (
     get_cancel_keyboard,
     get_start_keyboard,
 )
+from locales.texts import get_text
 from sheets import log_action
 
 logger = logging.getLogger(__name__)
@@ -29,13 +30,26 @@ def find_display_name(ticker: str, network: str) -> str:
     return f"{ticker.upper()}"
 
 
+async def _get_user_lang(user_id: int) -> str:
+    """Helper to get user language from DB."""
+    async with async_session() as session:
+        stmt = select(User).where(User.telegram_id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        return user.language if user else "en"
+
+
 @router.callback_query(F.data == "start_exchange")
 async def start_exchange(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     """Start the exchange flow — show FROM currency selection."""
     await state.clear()
+    user_id = callback_query.from_user.id
+    lang = await _get_user_lang(user_id)
+
+    await state.update_data(lang=lang)
     await callback_query.message.edit_text(
-        "💱 **Select the currency you want to send (FROM):**",
-        reply_markup=get_currency_keyboard("from"),
+        get_text("select_from", lang),
+        reply_markup=get_currency_keyboard("from", lang=lang),
         parse_mode="Markdown"
     )
     await state.set_state(ExchangeState.select_from)
@@ -57,11 +71,13 @@ async def process_from_selection(callback_query: types.CallbackQuery, state: FSM
         from_display=display,
     )
     
+    data = await state.get_data()
+    lang = data.get("lang", "en")
+    
     exclude_key = f"{ticker}:{network}"
     await callback_query.message.edit_text(
-        f"💱 **Sending:** {display}\n\n"
-        f"**Select the currency you want to receive (TO):**",
-        reply_markup=get_currency_keyboard("to", exclude=exclude_key),
+        get_text("select_to", lang, from_display=display),
+        reply_markup=get_currency_keyboard("to", exclude=exclude_key, lang=lang),
         parse_mode="Markdown"
     )
     await state.set_state(ExchangeState.select_to)
@@ -83,13 +99,14 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
     )
     
     data = await state.get_data()
+    lang = data.get("lang", "en")
     from_display = data['from_display']
     from_ticker = data['from_ticker']
     from_network = data['from_network']
     
     # Fetch minimum amount from Swapzone
     await callback_query.message.edit_text(
-        f"⏳ Fetching exchange details for {from_display} → {display}...",
+        get_text("fetching_details", lang, from_display=from_display, to_display=display),
         parse_mode="Markdown"
     )
     
@@ -97,8 +114,8 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
     
     if "error" in min_data:
         await callback_query.message.edit_text(
-            f"❌ This exchange pair is currently unavailable.\n\nError: {min_data['error']}\n\nPlease try a different pair.",
-            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id),
+            get_text("pair_unavailable", lang, error=min_data['error']),
+            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id, lang=lang),
             parse_mode="Markdown"
         )
         await state.clear()
@@ -109,10 +126,8 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
     await state.update_data(min_amount=min_amount)
     
     await callback_query.message.edit_text(
-        f"💱 **{from_display} → {display}**\n\n"
-        f"Enter the amount of **{from_display}** you want to exchange:\n\n"
-        f"_(Minimum: {min_amount} {from_display})_",
-        reply_markup=get_cancel_keyboard(),
+        get_text("enter_amount", lang, from_display=from_display, to_display=display, min_amount=min_amount),
+        reply_markup=get_cancel_keyboard(lang=lang),
         parse_mode="Markdown"
     )
     await state.set_state(ExchangeState.enter_amount)
@@ -122,25 +137,26 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
 @router.message(ExchangeState.enter_amount)
 async def process_amount(message: types.Message, state: FSMContext) -> None:
     """Process amount input, fetch estimated amount, ask for address."""
+    data = await state.get_data()
+    lang = data.get("lang", "en")
+
     try:
         amount = float(message.text.strip())
         if amount <= 0:
             raise ValueError("Amount must be positive")
     except (ValueError, TypeError):
         await message.answer(
-            "❌ Please enter a valid positive number.",
-            reply_markup=get_cancel_keyboard()
+            get_text("invalid_amount", lang),
+            reply_markup=get_cancel_keyboard(lang=lang)
         )
         return
     
-    data = await state.get_data()
     min_amount = data.get('min_amount', 0)
     
     if amount < min_amount:
         await message.answer(
-            f"❌ Amount is below the minimum of {min_amount} {data['from_display']}.\n"
-            f"Please enter a larger amount.",
-            reply_markup=get_cancel_keyboard()
+            get_text("amount_below_min", lang, min_amount=min_amount, from_display=data['from_display']),
+            reply_markup=get_cancel_keyboard(lang=lang)
         )
         return
     
@@ -152,15 +168,17 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     to_display = data['to_display']
     
     # Fetch estimated amount
-    loading_msg = await message.answer(f"⏳ Getting exchange rate for {amount} {from_display} → {to_display}...")
+    loading_msg = await message.answer(
+        get_text("getting_rate", lang, amount=amount, from_display=from_display, to_display=to_display)
+    )
     
     estimate = await swapzone.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
     logger.info(f"Swapzone estimate response: {estimate}")
     
     if "error" in estimate:
         await loading_msg.edit_text(
-            f"❌ Could not get exchange rate.\n\nError: {estimate['error']}\n\nPlease try again.",
-            reply_markup=get_start_keyboard(user_id=message.from_user.id)
+            get_text("rate_error", lang, error=estimate['error']),
+            reply_markup=get_start_keyboard(user_id=message.from_user.id, lang=lang)
         )
         await state.clear()
         return
@@ -170,8 +188,8 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     
     if estimated_amount <= 0:
         await loading_msg.edit_text(
-            "❌ The estimated amount is too small. Please try a larger amount.",
-            reply_markup=get_start_keyboard(user_id=message.from_user.id)
+            get_text("estimate_too_small", lang),
+            reply_markup=get_start_keyboard(user_id=message.from_user.id, lang=lang)
         )
         await state.clear()
         return
@@ -188,11 +206,10 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     )
     
     await loading_msg.edit_text(
-        f"💱 **Exchange Quote:**\n\n"
-        f"📤 **You send:** {amount} {from_display}\n"
-        f"📥 **You get:** ~{displayed_estimate:.8g} {to_display}\n\n"
-        f"Now enter your **{to_display}** destination wallet address:",
-        reply_markup=get_cancel_keyboard(),
+        get_text("exchange_quote", lang,
+                 amount=amount, from_display=from_display,
+                 displayed_estimate=f"{displayed_estimate:.8g}", to_display=to_display),
+        reply_markup=get_cancel_keyboard(lang=lang),
         parse_mode="Markdown"
     )
     await state.set_state(ExchangeState.enter_address)
@@ -202,11 +219,13 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
 async def process_address(message: types.Message, state: FSMContext) -> None:
     """Process destination address, show confirmation."""
     address = message.text.strip()
+    data = await state.get_data()
+    lang = data.get("lang", "en")
     
     if len(address) < 10:
         await message.answer(
-            "❌ That doesn't look like a valid wallet address. Please try again.",
-            reply_markup=get_cancel_keyboard()
+            get_text("invalid_address", lang),
+            reply_markup=get_cancel_keyboard(lang=lang)
         )
         return
     
@@ -219,22 +238,21 @@ async def process_address(message: types.Message, state: FSMContext) -> None:
     displayed_estimate = data['displayed_estimate']
     
     await message.answer(
-        f"📋 **Exchange Confirmation:**\n\n"
-        f"📤 **Send:** {amount} {from_display}\n"
-        f"📥 **Receive:** ~{displayed_estimate:.8g} {to_display}\n"
-        f"📬 **To address:** `{address}`\n\n"
-        f"⚠️ Please verify the address carefully. Transactions cannot be reversed.\n\n"
-        f"Press **Confirm** to proceed or **Cancel** to abort.",
-        reply_markup=get_confirm_keyboard(),
+        get_text("confirm_exchange", lang,
+                 amount=amount, from_display=from_display,
+                 displayed_estimate=f"{displayed_estimate:.8g}", to_display=to_display,
+                 address=address),
+        reply_markup=get_confirm_keyboard(lang=lang),
         parse_mode="Markdown"
     )
     await state.set_state(ExchangeState.confirm)
 
 
 @router.callback_query(ExchangeState.confirm, F.data == "confirm_exchange")
-async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContext, bot: Bot) -> None:
     """Confirm and create the exchange via Swapzone API."""
     data = await state.get_data()
+    lang = data.get("lang", "en")
     user_id = callback_query.from_user.id
     username = callback_query.from_user.username
     
@@ -250,7 +268,7 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     address = data['address']
     quota_id = data.get('quota_id', '')
     
-    await callback_query.message.edit_text("⏳ Creating your exchange...")
+    await callback_query.message.edit_text(get_text("creating_exchange", lang))
     
     # Create exchange via Swapzone
     result = await swapzone.create_exchange(
@@ -265,8 +283,8 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     
     if "error" in result:
         await callback_query.message.edit_text(
-            f"❌ Failed to create exchange.\n\nError: {result['error']}\n\nPlease try again.",
-            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id)
+            get_text("exchange_create_error", lang, error=result['error']),
+            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id, lang=lang)
         )
         await state.clear()
         await callback_query.answer()
@@ -278,25 +296,22 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     
     if not changenow_id or not deposit_address:
         await callback_query.message.edit_text(
-            "❌ Unexpected response from exchange service. Please try again.",
-            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id)
+            get_text("exchange_unexpected_error", lang),
+            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id, lang=lang)
         )
         await state.clear()
         await callback_query.answer()
         return
     
     # Build the deposit message
-    extra_id_text = f"\n🏷️ **Memo/Tag:** `{payin_extra_id}`" if payin_extra_id else ""
+    extra_id_text = get_text("exchange_memo", lang, memo=payin_extra_id) if payin_extra_id else ""
     
     deposit_msg = await callback_query.message.edit_text(
-        f"✅ **Exchange Created!**\n\n"
-        f"📤 **Send exactly** `{amount}` **{from_display}** to:\n\n"
-        f"📬 `{deposit_address}`{extra_id_text}\n\n"
-        f"📥 **You will receive:** ~{displayed_estimate:.8g} {to_display}\n"
-        f"📬 **To:** `{address}`\n\n"
-        f"🔄 **Status:** ⏳ Waiting for deposit\n"
-        f"🆔 **Exchange ID:** `{changenow_id}`\n\n"
-        f"_The status will update automatically._",
+        get_text("exchange_created", lang,
+                 amount=amount, from_display=from_display,
+                 deposit_address=deposit_address, extra_id_text=extra_id_text,
+                 displayed_estimate=f"{displayed_estimate:.8g}", to_display=to_display,
+                 address=address, changenow_id=changenow_id),
         parse_mode="Markdown"
     )
     
@@ -330,6 +345,39 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
         session.add(transaction)
         await session.commit()
     
+    # ── Referral commission ──────────────────────────────────────────
+    # Credit the referrer with a percentage of the bot's markup
+    async with async_session() as session:
+        stmt = select(User).where(User.telegram_id == user_id)
+        result_user = await session.execute(stmt)
+        exchange_user = result_user.scalar_one_or_none()
+
+        if exchange_user and exchange_user.referred_by:
+            # Commission = amount * (MARKUP_PERCENT/100) * (REFERRAL_PERCENT/100)
+            referrer_commission = Decimal(str(amount)) * (Decimal(str(MARKUP_PERCENT)) / Decimal("100")) * (Decimal(str(REFERRAL_PERCENT)) / Decimal("100"))
+
+            referrer_stmt = select(User).where(User.telegram_id == exchange_user.referred_by)
+            referrer_result = await session.execute(referrer_stmt)
+            referrer = referrer_result.scalar_one_or_none()
+
+            if referrer:
+                referrer.referral_earnings = (referrer.referral_earnings or Decimal("0")) + referrer_commission
+                await session.commit()
+                logger.info(f"Referral commission {referrer_commission} credited to {referrer.telegram_id}")
+
+                # Notify referrer about the commission
+                referrer_lang = referrer.language or "en"
+                try:
+                    await bot.send_message(
+                        referrer.telegram_id,
+                        get_text("referral_earned", referrer_lang,
+                                 amount=f"{referrer_commission:.8f}", currency=from_display,
+                                 total=f"{referrer.referral_earnings:.6f}"),
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify referrer {referrer.telegram_id}: {e}")
+
     await asyncio.to_thread(log_action, user_id, username, "Exchange Created",
                             f"{amount} {from_display} → ~{displayed_estimate:.8g} {to_display} | ID: {changenow_id}")
     
@@ -340,12 +388,17 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
 @router.callback_query(F.data == "cancel_exchange")
 async def cancel_exchange(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     """Cancel the exchange at any point."""
+    data = await state.get_data()
+    lang = data.get("lang", None)
+
+    # If lang not in state, fetch from DB
+    if not lang:
+        lang = await _get_user_lang(callback_query.from_user.id)
+
     await state.clear()
     await callback_query.message.edit_text(
-        "❌ Exchange cancelled.\n\n"
-        "🟢 **Welcome to Nexi Exchange!**\n\n"
-        "Choose an option below:",
-        reply_markup=get_start_keyboard(user_id=callback_query.from_user.id),
+        get_text("exchange_cancelled", lang),
+        reply_markup=get_start_keyboard(user_id=callback_query.from_user.id, lang=lang),
         parse_mode="Markdown"
     )
     await callback_query.answer()

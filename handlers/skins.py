@@ -17,6 +17,7 @@ from keyboards.builders import (
     get_skin_item_keyboard,
     get_skin_confirm_keyboard,
 )
+from locales.texts import get_text
 from sheets import log_action
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,15 @@ def _parse_dmarket_items(data: dict) -> list:
     return items
 
 
+async def _get_user_lang(user_id: int) -> str:
+    """Helper to get user language from DB."""
+    async with async_session() as session:
+        stmt = select(User).where(User.telegram_id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        return user.language if user else "en"
+
+
 @router.callback_query(F.data == "start_skins")
 async def start_skins(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     """Entry point for CS2 skins purchase flow."""
@@ -80,23 +90,26 @@ async def start_skins(callback_query: types.CallbackQuery, state: FSMContext) ->
         await callback_query.answer("This feature is not available yet.", show_alert=True)
         return
 
+    lang = await _get_user_lang(user_id)
+
     if not dmarket.is_configured():
         await callback_query.message.edit_text(
             "⚠️ CS2 Skins feature is not configured yet.\n"
             "DMarket API keys are missing.\n\n"
             "Please contact the admin.",
-            reply_markup=get_start_keyboard(user_id),
+            reply_markup=get_start_keyboard(user_id, lang=lang),
         )
         await callback_query.answer()
         return
 
     await state.clear()
+    await state.update_data(lang=lang)
     await callback_query.message.edit_text(
         "🔫 **CS2 Skins Exchange**\n\n"
         "Search for any CS2 skin by name.\n"
         "Type your search query below:\n\n"
         "_Example: AK-47 Redline, Butterfly Knife, AWP Dragon Lore_",
-        reply_markup=get_skin_search_keyboard(),
+        reply_markup=get_skin_search_keyboard(lang=lang),
         parse_mode="Markdown",
     )
     await state.set_state(SkinState.search)
@@ -110,11 +123,13 @@ async def process_search(message: types.Message, state: FSMContext) -> None:
     if not _is_test_user(user_id):
         return
 
+    data = await state.get_data()
+    lang = data.get("lang", "en")
     query = message.text.strip()
     if len(query) < 2:
         await message.answer(
             "❌ Search query too short. Please enter at least 2 characters.",
-            reply_markup=get_skin_search_keyboard(),
+            reply_markup=get_skin_search_keyboard(lang=lang),
         )
         return
 
@@ -126,7 +141,7 @@ async def process_search(message: types.Message, state: FSMContext) -> None:
     if "error" in result:
         await loading_msg.edit_text(
             f"❌ Search failed: {result['error']}\n\nPlease try again.",
-            reply_markup=get_skin_search_keyboard(),
+            reply_markup=get_skin_search_keyboard(lang=lang),
         )
         return
 
@@ -136,7 +151,7 @@ async def process_search(message: types.Message, state: FSMContext) -> None:
     if not items:
         await loading_msg.edit_text(
             f"😕 No results found for **{query}**.\n\nTry a different search term.",
-            reply_markup=get_skin_search_keyboard(),
+            reply_markup=get_skin_search_keyboard(lang=lang),
             parse_mode="Markdown",
         )
         return
@@ -152,7 +167,7 @@ async def process_search(message: types.Message, state: FSMContext) -> None:
     await loading_msg.edit_text(
         f"🔫 **CS2 Skins — Results for \"{query}\"**\n"
         f"Found {total_items} items. Select one to view details:\n",
-        reply_markup=get_skin_results_keyboard(items, offset=0, total=total_items, limit=ITEMS_PER_PAGE),
+        reply_markup=get_skin_results_keyboard(items, offset=0, total=total_items, limit=ITEMS_PER_PAGE, lang=lang),
         parse_mode="Markdown",
     )
     await state.set_state(SkinState.browse_results)
@@ -167,6 +182,7 @@ async def handle_pagination(callback_query: types.CallbackQuery, state: FSMConte
 
     offset = int(callback_query.data.split(":")[1])
     data = await state.get_data()
+    lang = data.get("lang", "en")
     query = data.get("search_query", "")
 
     # Fetch new page
@@ -188,7 +204,7 @@ async def handle_pagination(callback_query: types.CallbackQuery, state: FSMConte
     await callback_query.message.edit_text(
         f"🔫 **CS2 Skins — Results for \"{query}\"**\n"
         f"Found {total_items} items (page {offset // ITEMS_PER_PAGE + 1}):\n",
-        reply_markup=get_skin_results_keyboard(items, offset=offset, total=total_items, limit=ITEMS_PER_PAGE),
+        reply_markup=get_skin_results_keyboard(items, offset=offset, total=total_items, limit=ITEMS_PER_PAGE, lang=lang),
         parse_mode="Markdown",
     )
     await callback_query.answer()
@@ -201,11 +217,14 @@ async def handle_new_search(callback_query: types.CallbackQuery, state: FSMConte
     if not _is_test_user(user_id):
         return
 
+    data = await state.get_data()
+    lang = data.get("lang", "en")
+
     await callback_query.message.edit_text(
         "🔫 **CS2 Skins Exchange**\n\n"
         "Type your search query below:\n\n"
         "_Example: AK-47 Redline, Butterfly Knife, AWP Dragon Lore_",
-        reply_markup=get_skin_search_keyboard(),
+        reply_markup=get_skin_search_keyboard(lang=lang),
         parse_mode="Markdown",
     )
     await state.set_state(SkinState.search)
@@ -221,6 +240,7 @@ async def view_item(callback_query: types.CallbackQuery, state: FSMContext) -> N
 
     offer_id = callback_query.data.split(":", 1)[1]
     data = await state.get_data()
+    lang = data.get("lang", "en")
     items = data.get("search_items", [])
 
     # Find the item in current results
@@ -259,7 +279,7 @@ async def view_item(callback_query: types.CallbackQuery, state: FSMContext) -> N
         f"💵 **Our Price:** ${markup_price:.2f}\n\n"
         f"**Pay with crypto:**\n{prices_text}\n\n"
         f"Select your payment method below:",
-        reply_markup=get_skin_item_keyboard(offer_id),
+        reply_markup=get_skin_item_keyboard(offer_id, lang=lang),
         parse_mode="Markdown",
     )
     await state.set_state(SkinState.view_item)
@@ -281,6 +301,7 @@ async def select_payment(callback_query: types.CallbackQuery, state: FSMContext)
     display_name = _find_display_name(ticker, network)
 
     data = await state.get_data()
+    lang = data.get("lang", "en")
     markup_price_usd = data.get("markup_price_usd", 0)
 
     # Get crypto price
@@ -309,7 +330,7 @@ async def select_payment(callback_query: types.CallbackQuery, state: FSMContext)
         f"Steam → Inventory → Trade Offers → Who can send me Trade Offers?\n"
         f"Or visit: https://steamcommunity.com/my/tradeoffers/privacy\n\n"
         f"_Paste your trade URL below:_",
-        reply_markup=get_skin_search_keyboard(),  # Just cancel button
+        reply_markup=get_skin_search_keyboard(lang=lang),  # Just cancel button
         parse_mode="Markdown",
     )
     await state.set_state(SkinState.enter_trade_url)
@@ -323,6 +344,8 @@ async def process_trade_url(message: types.Message, state: FSMContext) -> None:
     if not _is_test_user(user_id):
         return
 
+    data = await state.get_data()
+    lang = data.get("lang", "en")
     trade_url = message.text.strip()
 
     # Basic validation
@@ -332,7 +355,7 @@ async def process_trade_url(message: types.Message, state: FSMContext) -> None:
             "It should look like:\n"
             "`https://steamcommunity.com/tradeoffer/new/?partner=XXXXX&token=XXXXX`\n\n"
             "Please try again.",
-            reply_markup=get_skin_search_keyboard(),
+            reply_markup=get_skin_search_keyboard(lang=lang),
             parse_mode="Markdown",
         )
         return
@@ -353,7 +376,7 @@ async def process_trade_url(message: types.Message, state: FSMContext) -> None:
         f"⚠️ After confirming, you will receive a deposit address.\n"
         f"Send the exact crypto amount to complete the purchase.\n\n"
         f"Press **Confirm** to proceed or **Cancel** to abort.",
-        reply_markup=get_skin_confirm_keyboard(),
+        reply_markup=get_skin_confirm_keyboard(lang=lang),
         parse_mode="Markdown",
     )
     await state.set_state(SkinState.confirm)
@@ -375,6 +398,7 @@ async def confirm_purchase(callback_query: types.CallbackQuery, state: FSMContex
         return
 
     data = await state.get_data()
+    lang = data.get("lang", "en")
     item = data.get("selected_item", {})
     offer_id = data.get("selected_offer_id", "")
     markup_price_usd = data.get("markup_price_usd", 0)
@@ -420,7 +444,7 @@ async def confirm_purchase(callback_query: types.CallbackQuery, state: FSMContex
         if "error" in result:
             await callback_query.message.edit_text(
                 f"❌ Failed to create payment.\n\nError: {result['error']}\n\nPlease try again.",
-                reply_markup=get_start_keyboard(user_id),
+                reply_markup=get_start_keyboard(user_id, lang=lang),
             )
             await state.clear()
             await callback_query.answer()
@@ -495,6 +519,7 @@ async def back_to_results(callback_query: types.CallbackQuery, state: FSMContext
         return
 
     data = await state.get_data()
+    lang = data.get("lang", "en")
     query = data.get("search_query", "")
     items = data.get("search_items", [])
     offset = data.get("search_offset", 0)
@@ -510,7 +535,7 @@ async def back_to_results(callback_query: types.CallbackQuery, state: FSMContext
     await callback_query.message.edit_text(
         f"🔫 **CS2 Skins — Results for \"{query}\"**\n"
         f"Found {total} items:\n",
-        reply_markup=get_skin_results_keyboard(items, offset=offset, total=total, limit=ITEMS_PER_PAGE),
+        reply_markup=get_skin_results_keyboard(items, offset=offset, total=total, limit=ITEMS_PER_PAGE, lang=lang),
         parse_mode="Markdown",
     )
     await state.set_state(SkinState.browse_results)
@@ -521,12 +546,15 @@ async def back_to_results(callback_query: types.CallbackQuery, state: FSMContext
 async def cancel_skins(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     """Cancel the skin purchase flow."""
     user_id = callback_query.from_user.id
+    data = await state.get_data()
+    lang = data.get("lang", None)
+    if not lang:
+        lang = await _get_user_lang(user_id)
+
     await state.clear()
     await callback_query.message.edit_text(
-        "❌ Skin purchase cancelled.\n\n"
-        "🟢 **Welcome to Nexi Exchange!**\n\n"
-        "Choose an option below:",
-        reply_markup=get_start_keyboard(user_id),
+        get_text("exchange_cancelled", lang),
+        reply_markup=get_start_keyboard(user_id, lang=lang),
         parse_mode="Markdown",
     )
     await callback_query.answer()

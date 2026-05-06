@@ -6,25 +6,23 @@ from decimal import Decimal
 from aiogram import Bot
 from sqlalchemy import select, not_
 
-from database import async_session, Transaction
+from database import async_session, Transaction, User
 from services.swapzone import swapzone
+from locales.texts import get_text
 
 logger = logging.getLogger(__name__)
 
-# Status emoji mapping for message updates
-STATUS_EMOJI = {
-    "waiting": "⏳ Waiting for deposit",
-    "confirming": "🔍 Confirming transaction",
-    "exchanging": "🔄 Exchanging",
-    "sending": "📤 Sending to your wallet",
-    "finished": "✅ Exchange complete!",
-    "failed": "❌ Exchange failed",
-    "refunded": "↩️ Refunded",
-    "expired": "⏰ Expired",
-}
-
 TERMINAL_STATUSES = {"finished", "failed", "refunded", "expired"}
 EXPIRY_HOURS = 24
+
+
+async def _get_user_lang_by_user_id(db_user_id: int) -> str:
+    """Get user language by internal user ID (not telegram_id)."""
+    async with async_session() as session:
+        stmt = select(User).where(User.id == db_user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        return user.language if user else "en"
 
 
 async def poll_transactions(bot: Bot) -> None:
@@ -115,7 +113,10 @@ async def _update_transaction_status(bot: Bot, tx: Transaction, new_status: str,
     # Edit Telegram message if we have message_id and chat_id
     if tx.message_id and tx.chat_id:
         try:
-            status_text = STATUS_EMOJI.get(new_status, f"❓ {new_status}")
+            # Get user's language
+            lang = await _get_user_lang_by_user_id(tx.user_id)
+            
+            status_text = get_text(f"status_{new_status}", lang)
             
             # Build updated message
             from_currency = tx.from_currency.upper()

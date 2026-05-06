@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import BigInteger, String, Numeric, DateTime, ForeignKey, func, inspect, text
+from sqlalchemy import BigInteger, String, Integer, Numeric, DateTime, ForeignKey, func, inspect, text
 from config import DATABASE_URL
 from typing import List, Optional
 from datetime import datetime
@@ -21,6 +21,16 @@ class User(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Language preference
+    language: Mapped[str] = mapped_column(String(5), server_default=text("'en'"), nullable=False)
+
+    # Referral system
+    referral_code: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
+    referred_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    referral_earnings: Mapped[Decimal] = mapped_column(Numeric(28, 18), server_default=text("0"), nullable=False)
+    referral_count: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+
     transactions: Mapped[List["Transaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     skin_transactions: Mapped[List["SkinTransaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
