@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from decimal import Decimal
 from aiogram import Router, types, F, Bot
@@ -8,6 +7,7 @@ from sqlalchemy import select
 from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT
 from database import async_session, User, Transaction
 from services.swapzone import swapzone
+from services.supabase_client import supabase
 from utils.states import ExchangeState
 from keyboards.builders import (
     get_currency_keyboard,
@@ -16,7 +16,6 @@ from keyboards.builders import (
     get_start_keyboard,
 )
 from locales.texts import get_text
-from sheets import log_action
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -378,8 +377,8 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
                 except Exception as e:
                     logger.warning(f"Could not notify referrer {referrer.telegram_id}: {e}")
 
-    await asyncio.to_thread(log_action, user_id, username, "Exchange Created",
-                            f"{amount} {from_display} → ~{displayed_estimate:.8g} {to_display} | ID: {changenow_id}")
+    await supabase.log_exchange(user_id, from_display, to_display, float(amount), float(displayed_estimate), "created", changenow_id)
+    await supabase.log_event("exchange_created", user_id, username, f"{amount} {from_display} → ~{displayed_estimate:.8g} {to_display} | ID: {changenow_id}")
     
     await state.clear()
     await callback_query.answer()

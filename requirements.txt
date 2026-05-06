@@ -3,5 +3,3 @@ sqlalchemy>=2.0.0
 python-dotenv
 asyncpg
 aiohttp
-gspread
-google-auth

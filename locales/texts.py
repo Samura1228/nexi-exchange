@@ -57,7 +57,7 @@ TEXTS = {
         "status_expired": "⏰ Exchange expired. No deposit received.",
 
         # Referrals
-        "referral_title": "👥 **Your Referral Dashboard**\n\n🔗 **Your referral link:**\n`{referral_link}`\n\n📊 **Stats:**\n├ 👤 Referrals: **{referral_count}**\n└ 💰 Total earned: **{earnings_str} USDT**\n\n💡 Share your link with friends! You earn **30%** of the exchange fee every time your referral makes a swap.\n\n_Tap the button below to share your link:_",
+        "referral_title": "👥 **Your Referral Dashboard**\n\n🔗 **Your referral link:**\n`{referral_link}`\n\n📊 **Stats:**\n├ 👤 Referrals: **{referral_count}**\n└ 💰 Total earned: **{earnings_str} USDT**\n\n💡 Share your link with friends! You earn **20%** of the exchange fee every time your referral makes a swap.\n\n_Tap the button below to share your link:_",
         "referral_share_text": "🟢 Try Nexi Exchange — swap crypto instantly, non-custodial and secure!\n👉 {referral_link}",
         "referral_new": "🎉 Someone joined via your referral link!\nYou now have **{count}** referral(s).",
         "referral_earned": "💸 You earned **{amount} {currency}** from a referral exchange!\nTotal referral earnings: **{total} USDT**",
@@ -141,7 +141,7 @@ TEXTS = {
         "status_expired": "⏰ Обмен истёк. Депозит не получен.",
 
         # Referrals
-        "referral_title": "👥 **Ваша реферальная программа**\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`\n\n📊 **Статистика:**\n├ 👤 Рефералов: **{referral_count}**\n└ 💰 Заработано: **{earnings_str} USDT**\n\n💡 Делитесь ссылкой с друзьями! Вы получаете **30%** комиссии с каждого обмена ваших рефералов.\n\n_Нажмите кнопку ниже, чтобы поделиться:_",
+        "referral_title": "👥 **Ваша реферальная программа**\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`\n\n📊 **Статистика:**\n├ 👤 Рефералов: **{referral_count}**\n└ 💰 Заработано: **{earnings_str} USDT**\n\n💡 Делитесь ссылкой с друзьями! Вы получаете **20%** комиссии с каждого обмена ваших рефералов.\n\n_Нажмите кнопку ниже, чтобы поделиться:_",
         "referral_share_text": "🟢 Попробуйте Nexi Exchange — мгновенный обмен крипты, безопасно и надёжно!\n👉 {referral_link}",
         "referral_new": "🎉 Кто-то присоединился по вашей реферальной ссылке!\nУ вас теперь **{count}** реферал(ов).",
         "referral_earned": "💸 Вы заработали **{amount} {currency}** с обмена реферала!\nВсего реферальных: **{total} USDT**",

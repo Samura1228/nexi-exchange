@@ -18,7 +18,7 @@ from keyboards.builders import (
     get_skin_confirm_keyboard,
 )
 from locales.texts import get_text
-from sheets import log_action
+from services.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -497,15 +497,9 @@ async def confirm_purchase(callback_query: types.CallbackQuery, state: FSMContex
         session.add(skin_tx)
         await session.commit()
 
-    # Log to Google Sheets
-    try:
-        import asyncio
-        await asyncio.to_thread(
-            log_action, user_id, username, "Skin Purchase Created",
-            f"{item.get('title', 'Unknown')} | ${markup_price_usd:.2f} | {crypto_amount:.8g} {pay_display}"
-        )
-    except Exception as e:
-        logger.warning(f"Failed to log skin purchase to sheets: {e}")
+    # Log to Supabase
+    await supabase.log_event("skin_purchase", user_id, username,
+                             f"{item.get('title', 'Unknown')} | ${markup_price_usd:.2f} | {crypto_amount:.8g} {pay_display}")
 
     await state.clear()
     await callback_query.answer()

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from aiogram import Router, types, F, Bot
 from aiogram.filters import CommandStart, CommandObject
@@ -8,7 +7,7 @@ from sqlalchemy import select
 from database import async_session, User
 from keyboards.builders import get_start_keyboard, get_language_keyboard
 from locales.texts import get_text
-from sheets import log_action
+from services.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -77,7 +76,8 @@ async def command_start(message: types.Message, state: FSMContext, command: Comm
             )
             # Store referrer_id in state for after language selection
             await state.update_data(is_new_user=True)
-            await asyncio.to_thread(log_action, user_id, username, "Start Bot", "New user - language selection")
+            await supabase.log_event("user_start", user_id, username, "New user - language selection")
+            await supabase.log_user(user_id, username, referred_by=referrer_id)
             return
         else:
             # Existing user — update username if changed
@@ -90,7 +90,7 @@ async def command_start(message: types.Message, state: FSMContext, command: Comm
                 await session.commit()
             lang = user.language or "en"
 
-    await asyncio.to_thread(log_action, user_id, username, "Start Bot", "User started the bot")
+    await supabase.log_event("user_start", user_id, username, "User started the bot")
 
     await message.answer(
         get_text("welcome_back", lang),
