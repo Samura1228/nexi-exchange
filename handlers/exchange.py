@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT
 from database import async_session, User, Transaction
-from services.changenow import changenow
+from services.swapzone import swapzone
 from utils.states import ExchangeState
 from keyboards.builders import (
     get_currency_keyboard,
@@ -87,18 +87,18 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
     from_ticker = data['from_ticker']
     from_network = data['from_network']
     
-    # Fetch minimum amount from ChangeNow
+    # Fetch minimum amount from Swapzone
     await callback_query.message.edit_text(
         f"⏳ Fetching exchange details for {from_display} → {display}...",
         parse_mode="Markdown"
     )
     
-    min_data = await changenow.get_min_amount(from_ticker, from_network, ticker, network)
+    min_data = await swapzone.get_min_amount(from_ticker, from_network, ticker, network)
     
     if "error" in min_data:
         await callback_query.message.edit_text(
             f"❌ This exchange pair is currently unavailable.\n\nError: {min_data['error']}\n\nPlease try a different pair.",
-            reply_markup=get_start_keyboard(),
+            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id),
             parse_mode="Markdown"
         )
         await state.clear()
@@ -154,24 +154,24 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     # Fetch estimated amount
     loading_msg = await message.answer(f"⏳ Getting exchange rate for {amount} {from_display} → {to_display}...")
     
-    estimate = await changenow.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
-    logger.info(f"ChangeNow estimate response: {estimate}")
+    estimate = await swapzone.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
+    logger.info(f"Swapzone estimate response: {estimate}")
     
     if "error" in estimate:
         await loading_msg.edit_text(
             f"❌ Could not get exchange rate.\n\nError: {estimate['error']}\n\nPlease try again.",
-            reply_markup=get_start_keyboard()
+            reply_markup=get_start_keyboard(user_id=message.from_user.id)
         )
         await state.clear()
         return
     
-    # ChangeNow v2 API returns "toAmount"; fall back to "estimatedAmount" for compatibility
-    estimated_amount = float(estimate.get("toAmount") or estimate.get("estimatedAmount") or 0)
+    estimated_amount = float(estimate.get("estimatedAmount") or 0)
+    quota_id = estimate.get("quotaId", "")
     
     if estimated_amount <= 0:
         await loading_msg.edit_text(
             "❌ The estimated amount is too small. Please try a larger amount.",
-            reply_markup=get_start_keyboard()
+            reply_markup=get_start_keyboard(user_id=message.from_user.id)
         )
         await state.clear()
         return
@@ -184,6 +184,7 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
         amount=amount,
         estimated_amount=estimated_amount,
         displayed_estimate=displayed_estimate,
+        quota_id=quota_id,
     )
     
     await loading_msg.edit_text(
@@ -232,7 +233,7 @@ async def process_address(message: types.Message, state: FSMContext) -> None:
 
 @router.callback_query(ExchangeState.confirm, F.data == "confirm_exchange")
 async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContext) -> None:
-    """Confirm and create the exchange via ChangeNow API."""
+    """Confirm and create the exchange via Swapzone API."""
     data = await state.get_data()
     user_id = callback_query.from_user.id
     username = callback_query.from_user.username
@@ -247,23 +248,25 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     displayed_estimate = data['displayed_estimate']
     estimated_amount = data['estimated_amount']
     address = data['address']
+    quota_id = data.get('quota_id', '')
     
     await callback_query.message.edit_text("⏳ Creating your exchange...")
     
-    # Create exchange via ChangeNow
-    result = await changenow.create_exchange(
+    # Create exchange via Swapzone
+    result = await swapzone.create_exchange(
         from_currency=from_ticker,
         from_network=from_network,
         to_currency=to_ticker,
         to_network=to_network,
         amount=amount,
         address=address,
+        quota_id=quota_id,
     )
     
     if "error" in result:
         await callback_query.message.edit_text(
             f"❌ Failed to create exchange.\n\nError: {result['error']}\n\nPlease try again.",
-            reply_markup=get_start_keyboard()
+            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id)
         )
         await state.clear()
         await callback_query.answer()
@@ -276,7 +279,7 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     if not changenow_id or not deposit_address:
         await callback_query.message.edit_text(
             "❌ Unexpected response from exchange service. Please try again.",
-            reply_markup=get_start_keyboard()
+            reply_markup=get_start_keyboard(user_id=callback_query.from_user.id)
         )
         await state.clear()
         await callback_query.answer()
@@ -342,7 +345,7 @@ async def cancel_exchange(callback_query: types.CallbackQuery, state: FSMContext
         "❌ Exchange cancelled.\n\n"
         "🟢 **Welcome to Nexi Exchange!**\n\n"
         "Choose an option below:",
-        reply_markup=get_start_keyboard(),
+        reply_markup=get_start_keyboard(user_id=callback_query.from_user.id),
         parse_mode="Markdown"
     )
     await callback_query.answer()

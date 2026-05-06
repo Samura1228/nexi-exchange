@@ -22,6 +22,7 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     transactions: Mapped[List["Transaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    skin_transactions: Mapped[List["SkinTransaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -43,6 +44,40 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     user: Mapped["User"] = relationship(back_populates="transactions")
+
+class SkinTransaction(Base):
+    __tablename__ = "skin_transactions"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    # DMarket details
+    dmarket_offer_id: Mapped[str] = mapped_column(String, nullable=False)  # DMarket item offer ID
+    skin_name: Mapped[str] = mapped_column(String, nullable=False)  # e.g. "AK-47 | Redline (Field-Tested)"
+    skin_price_usd: Mapped[Decimal] = mapped_column(Numeric(precision=12, scale=2), nullable=False)  # Price in USD on DMarket
+
+    # Payment details
+    pay_currency: Mapped[str] = mapped_column(String, nullable=False)  # e.g. "btc"
+    pay_network: Mapped[str] = mapped_column(String, nullable=False)  # e.g. "btc"
+    pay_amount: Mapped[Decimal] = mapped_column(Numeric(precision=28, scale=18), nullable=False)  # Amount in crypto
+    deposit_address: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Where user sends crypto
+    changenow_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # ChangeNow exchange ID if conversion needed
+
+    # Steam delivery
+    steam_trade_url: Mapped[str] = mapped_column(String, nullable=False)
+    trade_offer_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Steam trade offer ID
+
+    # Status tracking
+    status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+    # Statuses: pending, payment_waiting, payment_received, purchasing, trade_sent, completed, failed, refunded
+
+    # Telegram message tracking
+    message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="skin_transactions")
 
 async def init_db():
     async with engine.begin() as conn:

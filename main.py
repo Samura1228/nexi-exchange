@@ -7,7 +7,7 @@ from aiogram.types import BotCommand
 
 from config import BOT_TOKEN
 from database import init_db, migrate_db
-from handlers import start, exchange, history, settings
+from handlers import start, exchange, skins, history, settings
 from utils.poller import poll_transactions
 
 # Configure logging
@@ -27,6 +27,7 @@ async def main() -> None:
     # Register routers (order matters — first registered gets priority)
     dp.include_router(start.router)
     dp.include_router(exchange.router)
+    dp.include_router(skins.router)
     dp.include_router(history.router)
     dp.include_router(settings.router)
     

@@ -7,7 +7,7 @@ from aiogram import Bot
 from sqlalchemy import select, not_
 
 from database import async_session, Transaction
-from services.changenow import changenow
+from services.swapzone import swapzone
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ EXPIRY_HOURS = 24
 
 
 async def poll_transactions(bot: Bot) -> None:
-    """Background task that polls ChangeNow for transaction status updates."""
+    """Background task that polls Swapzone for transaction status updates."""
     logger.info("Transaction poller started")
     
     while True:
@@ -73,8 +73,8 @@ async def _process_transaction(bot: Bot, tx: Transaction) -> None:
             await _update_transaction_status(bot, tx, "expired", None)
             return
     
-    # Query ChangeNow for current status
-    status_data = await changenow.get_transaction_status(tx.changenow_id)
+    # Query Swapzone for current status
+    status_data = await swapzone.get_transaction_status(tx.changenow_id)
     
     if "error" in status_data:
         logger.warning(f"Could not get status for {tx.changenow_id}: {status_data['error']}")

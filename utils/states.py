@@ -8,3 +8,13 @@ class ExchangeState(StatesGroup):
     enter_amount = State()     # User entering amount
     enter_address = State()    # User entering destination address
     confirm = State()          # User confirming the exchange
+
+
+class SkinState(StatesGroup):
+    """FSM states for CS2 skin purchase flow."""
+    search = State()           # User is typing a search query
+    browse_results = State()   # User is browsing search results
+    view_item = State()        # User is viewing a specific item
+    select_crypto = State()    # User is selecting payment crypto
+    enter_trade_url = State()  # User is entering Steam trade URL
+    confirm = State()          # User is confirming the purchase

@@ -37,7 +37,7 @@ async def command_start(message: types.Message, state: FSMContext) -> None:
         "🟢 **Welcome to Nexi Exchange!**\n\n"
         "Swap cryptocurrencies instantly — non-custodial, fast, and secure.\n\n"
         "Choose an option below:",
-        reply_markup=get_start_keyboard(),
+        reply_markup=get_start_keyboard(user_id=message.from_user.id),
         parse_mode="Markdown"
     )
 
@@ -49,7 +49,7 @@ async def back_to_start(callback_query: types.CallbackQuery, state: FSMContext) 
         "🟢 **Welcome to Nexi Exchange!**\n\n"
         "Swap cryptocurrencies instantly — non-custodial, fast, and secure.\n\n"
         "Choose an option below:",
-        reply_markup=get_start_keyboard(),
+        reply_markup=get_start_keyboard(user_id=callback_query.from_user.id),
         parse_mode="Markdown"
     )
     await callback_query.answer()
