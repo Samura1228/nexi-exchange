@@ -168,7 +168,7 @@ class SwapzoneService:
             "rateType": "floating",
             "availableInUSA": "false",
             "chooseRate": "best",
-            "noRefundAddress": "false",
+            "noRefundAddress": "true",
         }
 
         data = await self._request("GET", "/exchange/get-rate", params=params)
@@ -215,7 +215,7 @@ class SwapzoneService:
             "rateType": "floating",
             "availableInUSA": "false",
             "chooseRate": "best",
-            "noRefundAddress": "false",
+            "noRefundAddress": "true",
         }
 
         data = await self._request("GET", "/exchange/get-rate", params=params)
@@ -256,18 +256,23 @@ class SwapzoneService:
             "amountDeposit": str(amount),
             "addressReceive": address,
             "quotaId": quota_id,
+            "noRefundAddress": True,
         }
 
         if extra_id:
             payload["extraIdReceive"] = extra_id
         if refund_address:
+            # If a refund address is provided, use it and disable noRefundAddress flag
             payload["refundAddress"] = refund_address
+            payload["noRefundAddress"] = False
         if refund_extra_id:
             payload["refundExtraId"] = refund_extra_id
 
+        logger.info(f"Swapzone create_exchange payload: from={from_ticker}, to={to_ticker}, amount={amount}, quotaId={quota_id[:16]}...")
         data = await self._request("POST", "/exchange/create", json_data=payload)
 
         if "error" in data:
+            logger.error(f"Swapzone create_exchange failed: {data}")
             return data
 
         # Swapzone wraps the result in a "transaction" object
