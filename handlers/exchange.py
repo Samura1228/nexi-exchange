@@ -46,18 +46,20 @@ async def start_exchange(callback_query: types.CallbackQuery, state: FSMContext)
     lang = await _get_user_lang(user_id)
 
     await state.update_data(lang=lang)
+    await state.set_state(ExchangeState.select_from)
+    logger.info(f"[exchange] User {user_id}: state set to ExchangeState.select_from")
     await callback_query.message.edit_text(
         get_text("select_from", lang),
         reply_markup=get_currency_keyboard("from", lang=lang),
         parse_mode="Markdown"
     )
-    await state.set_state(ExchangeState.select_from)
     await callback_query.answer()
 
 
 @router.callback_query(ExchangeState.select_from, F.data.startswith("sel:from:"))
 async def process_from_selection(callback_query: types.CallbackQuery, state: FSMContext) -> None:
     """Process FROM currency selection, show TO currency keyboard."""
+    logger.info(f"[exchange] User {callback_query.from_user.id}: process_from_selection triggered, data={callback_query.data}")
     # Parse callback: "sel:from:{ticker}:{network}"
     parts = callback_query.data.split(":")
     ticker = parts[2]
