@@ -1,3 +1,6 @@
+import asyncio
+import json
+import re
 import aiohttp
 import logging
 from typing import Optional
@@ -7,6 +10,25 @@ from config import SWAPZONE_API_KEY
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.swapzone.io/v1"
+
+# Max retries for transient errors
+MAX_RETRIES = 2
+RETRY_DELAY = 1.5  # seconds
+
+# Regex pattern to detect provider-level JSON parsing errors (JavaScript-style)
+_PROVIDER_ERROR_RE = re.compile(
+    r"(Unexpected token .? in JSON at position \d+|"
+    r"SyntaxError.*JSON|"
+    r"ECONNREFUSED|ETIMEDOUT|ENOTFOUND|"
+    r"socket hang up|"
+    r"network error|"
+    r"upstream connect error|"
+    r"502 Bad Gateway|503 Service Unavailable)",
+    re.IGNORECASE,
+)
+
+# User-friendly message for transient provider errors
+TRANSIENT_ERROR_MSG = "Exchange rate temporarily unavailable. Please try again in a moment."
 
 # Mapping from our internal (ticker, network) format to Swapzone currency tickers.
 # Swapzone uses specific ticker strings for tokens on different networks.
@@ -34,37 +56,95 @@ class SwapzoneService:
         self.api_key = SWAPZONE_API_KEY
         self.headers = {"x-api-key": self.api_key}
 
-    async def _request(self, method: str, endpoint: str, params: dict = None, json_data: dict = None) -> dict:
-        """Generic request handler with error handling."""
+    def _is_transient_error(self, error_msg: str) -> bool:
+        """Check if an error message indicates a transient provider-level issue."""
+        return bool(_PROVIDER_ERROR_RE.search(error_msg))
+
+    def _sanitize_error(self, error_msg: str) -> str:
+        """Replace technical provider errors with user-friendly messages."""
+        if self._is_transient_error(error_msg):
+            return TRANSIENT_ERROR_MSG
+        return error_msg
+
+    async def _request(
+        self, method: str, endpoint: str, params: dict = None, json_data: dict = None, retries: int = MAX_RETRIES
+    ) -> dict:
+        """Generic request handler with error handling and retry logic for transient errors."""
         url = f"{BASE_URL}{endpoint}"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.request(method, url, headers=self.headers, params=params, json=json_data) as resp:
-                    try:
-                        data = await resp.json(content_type=None)
-                    except Exception:
-                        text = await resp.text()
-                        logger.error(f"Swapzone API non-JSON response: {resp.status} - {text}")
-                        return {"error": f"API error {resp.status}: {text}"}
 
-                    if resp.status != 200:
-                        error_msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
-                        logger.error(f"Swapzone API error: {resp.status} - {error_msg}")
-                        return {"error": error_msg, "status_code": resp.status}
+        for attempt in range(1, retries + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.request(method, url, headers=self.headers, params=params, json=json_data) as resp:
+                        # Read raw text first for robust parsing and debugging
+                        raw_text = await resp.text()
 
-                    # Swapzone may return {"error": true, "message": "..."} with HTTP 200
-                    if isinstance(data, dict) and data.get("error") is True:
-                        error_msg = data.get("message", "Unknown exchange error")
-                        logger.warning(f"Swapzone API returned error in body: {error_msg}")
-                        return {"error": error_msg}
+                        # Try to parse as JSON
+                        try:
+                            data = json.loads(raw_text)
+                        except (ValueError, TypeError) as parse_err:
+                            logger.error(
+                                f"Swapzone API non-JSON response (attempt {attempt}/{retries}): "
+                                f"status={resp.status}, body={raw_text[:500]}"
+                            )
+                            # If we have retries left and this looks transient, retry
+                            if attempt < retries:
+                                await asyncio.sleep(RETRY_DELAY)
+                                continue
+                            # Return user-friendly error
+                            return {"error": TRANSIENT_ERROR_MSG, "_raw": raw_text[:200]}
 
-                    return data
-        except aiohttp.ClientError as e:
-            logger.error(f"Swapzone API connection error: {e}")
-            return {"error": f"Connection error: {str(e)}"}
-        except Exception as e:
-            logger.error(f"Swapzone API unexpected error: {e}")
-            return {"error": f"Unexpected error: {str(e)}"}
+                        # Handle non-200 status codes
+                        if resp.status != 200:
+                            error_msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
+                            logger.error(f"Swapzone API error: {resp.status} - {error_msg}")
+
+                            if self._is_transient_error(error_msg) and attempt < retries:
+                                logger.info(f"Retrying transient error (attempt {attempt}/{retries})...")
+                                await asyncio.sleep(RETRY_DELAY)
+                                continue
+
+                            return {"error": self._sanitize_error(error_msg), "status_code": resp.status}
+
+                        # Swapzone may return {"error": true, "message": "..."} with HTTP 200
+                        if isinstance(data, dict) and data.get("error") is True:
+                            error_msg = data.get("message", "Unknown exchange error")
+                            logger.warning(
+                                f"Swapzone API returned error in body (attempt {attempt}/{retries}): {error_msg}"
+                            )
+
+                            if self._is_transient_error(error_msg) and attempt < retries:
+                                logger.info(f"Retrying transient provider error (attempt {attempt}/{retries})...")
+                                await asyncio.sleep(RETRY_DELAY)
+                                continue
+
+                            return {"error": self._sanitize_error(error_msg)}
+
+                        # Validate that data is a dict (expected response format)
+                        if not isinstance(data, dict):
+                            logger.error(f"Swapzone API returned non-dict JSON: {type(data)} - {str(data)[:200]}")
+                            if attempt < retries:
+                                await asyncio.sleep(RETRY_DELAY)
+                                continue
+                            return {"error": TRANSIENT_ERROR_MSG}
+
+                        return data
+
+            except aiohttp.ClientError as e:
+                logger.error(f"Swapzone API connection error (attempt {attempt}/{retries}): {e}")
+                if attempt < retries:
+                    await asyncio.sleep(RETRY_DELAY)
+                    continue
+                return {"error": self._sanitize_error(str(e))}
+            except Exception as e:
+                logger.error(f"Swapzone API unexpected error (attempt {attempt}/{retries}): {e}")
+                if attempt < retries:
+                    await asyncio.sleep(RETRY_DELAY)
+                    continue
+                return {"error": f"Unexpected error: {str(e)}"}
+
+        # Should not reach here, but just in case
+        return {"error": TRANSIENT_ERROR_MSG}
 
     async def get_estimated_amount(
         self,
