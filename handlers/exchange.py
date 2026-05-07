@@ -4,9 +4,10 @@ from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT, EXCHANGE_TIMEOUT_MINUTES
+from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT, EXCHANGE_TIMEOUT_MINUTES, CHANGENOW_API_KEY
 from database import async_session, User, Transaction
 from services.swapzone import swapzone
+from services.changenow import changenow
 from services.supabase_client import supabase
 from utils.states import ExchangeState
 from keyboards.builders import (
@@ -105,13 +106,21 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
     from_ticker = data['from_ticker']
     from_network = data['from_network']
     
-    # Fetch minimum amount from Swapzone
+    # Fetch minimum amount — try Swapzone first, fall back to ChangeNow
     await callback_query.message.edit_text(
         get_text("fetching_details", lang, from_display=from_display, to_display=display),
         parse_mode="Markdown"
     )
     
+    provider = "swapzone"  # Track which provider we'll use
     min_data = await swapzone.get_min_amount(from_ticker, from_network, ticker, network)
+    
+    # If Swapzone fails, try ChangeNow as fallback
+    if "error" in min_data and CHANGENOW_API_KEY:
+        logger.info(f"Swapzone get_min_amount failed, trying ChangeNow fallback")
+        min_data = await changenow.get_min_amount(from_ticker, from_network, ticker, network)
+        if "error" not in min_data:
+            provider = "changenow"
     
     if "error" in min_data:
         await callback_query.message.edit_text(
@@ -124,7 +133,7 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
         return
     
     min_amount = min_data.get("minAmount", 0)
-    await state.update_data(min_amount=min_amount)
+    await state.update_data(min_amount=min_amount, provider=provider)
     
     await callback_query.message.edit_text(
         get_text("enter_amount", lang, from_display=from_display, to_display=display, min_amount=min_amount),
@@ -168,13 +177,27 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     from_display = data['from_display']
     to_display = data['to_display']
     
-    # Fetch estimated amount
+    # Fetch estimated amount — use stored provider or try Swapzone with ChangeNow fallback
     loading_msg = await message.answer(
         get_text("getting_rate", lang, amount=amount, from_display=from_display, to_display=to_display)
     )
     
-    estimate = await swapzone.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
-    logger.info(f"Swapzone estimate response: {estimate}")
+    provider = data.get("provider", "swapzone")
+    
+    if provider == "changenow":
+        estimate = await changenow.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
+        logger.info(f"ChangeNow estimate response: {estimate}")
+    else:
+        estimate = await swapzone.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
+        logger.info(f"Swapzone estimate response: {estimate}")
+        
+        # If Swapzone fails, try ChangeNow as fallback
+        if "error" in estimate and CHANGENOW_API_KEY:
+            logger.info("Swapzone estimate failed, trying ChangeNow fallback")
+            estimate = await changenow.get_estimated_amount(from_ticker, from_network, to_ticker, to_network, amount)
+            if "error" not in estimate:
+                provider = "changenow"
+                await state.update_data(provider=provider)
     
     if "error" in estimate:
         await loading_msg.edit_text(
@@ -251,7 +274,7 @@ async def process_address(message: types.Message, state: FSMContext) -> None:
 
 @router.callback_query(ExchangeState.confirm, F.data == "confirm_exchange")
 async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContext, bot: Bot) -> None:
-    """Confirm and create the exchange via Swapzone API."""
+    """Confirm and create the exchange via Swapzone or ChangeNow (fallback)."""
     data = await state.get_data()
     lang = data.get("lang", "en")
     user_id = callback_query.from_user.id
@@ -268,19 +291,43 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     estimated_amount = data['estimated_amount']
     address = data['address']
     quota_id = data.get('quota_id', '')
+    provider = data.get('provider', 'swapzone')
     
     await callback_query.message.edit_text(get_text("creating_exchange", lang))
     
-    # Create exchange via Swapzone
-    result = await swapzone.create_exchange(
-        from_currency=from_ticker,
-        from_network=from_network,
-        to_currency=to_ticker,
-        to_network=to_network,
-        amount=amount,
-        address=address,
-        quota_id=quota_id,
-    )
+    # Create exchange via the selected provider
+    if provider == "changenow":
+        result = await changenow.create_exchange(
+            from_currency=from_ticker,
+            from_network=from_network,
+            to_currency=to_ticker,
+            to_network=to_network,
+            amount=amount,
+            address=address,
+        )
+    else:
+        result = await swapzone.create_exchange(
+            from_currency=from_ticker,
+            from_network=from_network,
+            to_currency=to_ticker,
+            to_network=to_network,
+            amount=amount,
+            address=address,
+            quota_id=quota_id,
+        )
+        # If Swapzone fails, try ChangeNow as last resort
+        if "error" in result and CHANGENOW_API_KEY:
+            logger.info(f"Swapzone create_exchange failed, trying ChangeNow fallback")
+            result = await changenow.create_exchange(
+                from_currency=from_ticker,
+                from_network=from_network,
+                to_currency=to_ticker,
+                to_network=to_network,
+                amount=amount,
+                address=address,
+            )
+            if "error" not in result:
+                provider = "changenow"
     
     if "error" in result:
         await callback_query.message.edit_text(
@@ -341,6 +388,7 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
             destination_address=address,
             deposit_address=deposit_address,
             status="waiting",
+            provider=provider,
             message_id=deposit_msg.message_id,
             chat_id=callback_query.message.chat.id,
         )

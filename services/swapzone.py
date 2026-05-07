@@ -68,8 +68,9 @@ class SwapzoneService:
 
     async def _request(
         self, method: str, endpoint: str, params: dict = None, json_data: dict = None, retries: int = MAX_RETRIES
-    ) -> dict:
-        """Generic request handler with error handling and retry logic for transient errors."""
+    ):
+        """Generic request handler with error handling and retry logic for transient errors.
+        Returns dict or list depending on the API endpoint."""
         url = f"{BASE_URL}{endpoint}"
 
         for attempt in range(1, retries + 1):
@@ -120,15 +121,15 @@ class SwapzoneService:
 
                             return {"error": self._sanitize_error(error_msg)}
 
-                        # Validate that data is a dict (expected response format)
-                        if not isinstance(data, dict):
-                            logger.error(f"Swapzone API returned non-dict JSON: {type(data)} - {str(data)[:200]}")
-                            if attempt < retries:
-                                await asyncio.sleep(RETRY_DELAY)
-                                continue
-                            return {"error": TRANSIENT_ERROR_MSG}
+                        # Accept both dict and list responses (list for chooseRate=all)
+                        if isinstance(data, (dict, list)):
+                            return data
 
-                        return data
+                        logger.error(f"Swapzone API returned unexpected JSON type: {type(data)} - {str(data)[:200]}")
+                        if attempt < retries:
+                            await asyncio.sleep(RETRY_DELAY)
+                            continue
+                        return {"error": TRANSIENT_ERROR_MSG}
 
             except aiohttp.ClientError as e:
                 logger.error(f"Swapzone API connection error (attempt {attempt}/{retries}): {e}")
@@ -156,11 +157,14 @@ class SwapzoneService:
     ) -> dict:
         """
         Get estimated exchange amount and quotaId from Swapzone.
+        First tries without noRefundAddress filter (more providers, lower minimums).
+        Falls back to noRefundAddress=true if needed.
         Returns: {"estimatedAmount": float, "quotaId": str, ...} or {"error": "..."}
         """
         from_ticker = _get_swapzone_ticker(from_currency, from_network)
         to_ticker = _get_swapzone_ticker(to_currency, to_network)
 
+        # First try without noRefundAddress filter — allows all providers (lower minimums)
         params = {
             "from": from_ticker,
             "to": to_ticker,
@@ -168,13 +172,18 @@ class SwapzoneService:
             "rateType": "floating",
             "availableInUSA": "false",
             "chooseRate": "best",
-            "noRefundAddress": "true",
+            "noRefundAddress": "false",
         }
 
         data = await self._request("GET", "/exchange/get-rate", params=params)
 
         if "error" in data:
-            return data
+            # Fallback: try with noRefundAddress=true (fewer providers but guaranteed no refund needed)
+            logger.info("get_estimated_amount: retrying with noRefundAddress=true")
+            params["noRefundAddress"] = "true"
+            data = await self._request("GET", "/exchange/get-rate", params=params)
+            if "error" in data:
+                return data
 
         # Extract relevant fields from response
         # Swapzone returns "amountTo" (not "estimatedAmount")
@@ -202,20 +211,22 @@ class SwapzoneService:
     ) -> dict:
         """
         Get minimum exchange amount from Swapzone.
-        Uses the get-rate endpoint with a small amount to retrieve minAmount.
+        Uses the get-rate endpoint with chooseRate=all to find the lowest minAmount
+        across all available providers.
         Returns: {"minAmount": float, ...} or {"error": "..."}
         """
         from_ticker = _get_swapzone_ticker(from_currency, from_network)
         to_ticker = _get_swapzone_ticker(to_currency, to_network)
 
+        # Use chooseRate=all and noRefundAddress=false to get ALL providers and find lowest min
         params = {
             "from": from_ticker,
             "to": to_ticker,
             "amount": "100",
             "rateType": "floating",
             "availableInUSA": "false",
-            "chooseRate": "best",
-            "noRefundAddress": "true",
+            "chooseRate": "all",
+            "noRefundAddress": "false",
         }
 
         data = await self._request("GET", "/exchange/get-rate", params=params)
@@ -223,12 +234,27 @@ class SwapzoneService:
         if "error" in data:
             return data
 
-        min_amount = data.get("minAmount")
-        if min_amount is None:
-            # If minAmount not in response, return 0 as fallback
+        # When chooseRate=all, response is a list of providers
+        if isinstance(data, list) and len(data) > 0:
+            # Find the lowest minAmount across all providers
+            min_amounts = []
+            for provider in data:
+                provider_min = provider.get("minAmount")
+                if provider_min is not None and float(provider_min) > 0:
+                    min_amounts.append(float(provider_min))
+            if min_amounts:
+                return {"minAmount": min(min_amounts)}
+            # If no valid minAmount found in list, return 0
             return {"minAmount": 0}
 
-        return {"minAmount": float(min_amount)}
+        # Fallback: single response (shouldn't happen with chooseRate=all, but handle gracefully)
+        if isinstance(data, dict):
+            min_amount = data.get("minAmount")
+            if min_amount is None:
+                return {"minAmount": 0}
+            return {"minAmount": float(min_amount)}
+
+        return {"minAmount": 0}
 
     async def create_exchange(
         self,
@@ -245,6 +271,8 @@ class SwapzoneService:
     ) -> dict:
         """
         Create an exchange transaction via Swapzone.
+        If creation fails (e.g. provider requires refund address), retries with
+        a new quote from a provider that supports noRefundAddress.
         Returns: {"id": str, "payinAddress": str, "payinExtraId": str, ...} or {"error": "..."}
         """
         from_ticker = _get_swapzone_ticker(from_currency, from_network)
@@ -272,8 +300,36 @@ class SwapzoneService:
         data = await self._request("POST", "/exchange/create", json_data=payload)
 
         if "error" in data:
-            logger.error(f"Swapzone create_exchange failed: {data}")
-            return data
+            first_error = data.get("error", "")
+            logger.warning(f"Swapzone create_exchange first attempt failed: {first_error}")
+
+            # Fallback: get a new quote with noRefundAddress=true and retry
+            logger.info("create_exchange: retrying with noRefundAddress=true provider...")
+            fallback_params = {
+                "from": from_ticker,
+                "to": to_ticker,
+                "amount": str(amount),
+                "rateType": "floating",
+                "availableInUSA": "false",
+                "chooseRate": "best",
+                "noRefundAddress": "true",
+            }
+            fallback_rate = await self._request("GET", "/exchange/get-rate", params=fallback_params)
+
+            if isinstance(fallback_rate, dict) and "error" not in fallback_rate:
+                new_quota_id = fallback_rate.get("quotaId", "")
+                if new_quota_id:
+                    payload["quotaId"] = new_quota_id
+                    logger.info(f"Swapzone create_exchange retry with new quotaId from noRefundAddress=true provider")
+                    data = await self._request("POST", "/exchange/create", json_data=payload)
+                    if "error" in data:
+                        logger.error(f"Swapzone create_exchange retry also failed: {data}")
+                        return data
+                else:
+                    return {"error": first_error}
+            else:
+                # Fallback rate fetch also failed, return original error
+                return {"error": first_error}
 
         # Swapzone wraps the result in a "transaction" object
         transaction = data.get("transaction", data)

@@ -49,6 +49,7 @@ class Transaction(Base):
     destination_address: Mapped[str] = mapped_column(String, nullable=False)
     deposit_address: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, default="waiting", nullable=False)
+    provider: Mapped[str] = mapped_column(String, server_default=text("'swapzone'"), nullable=False)  # "swapzone" or "changenow"
     message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # Telegram message ID for editing
     chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # Telegram chat ID for editing
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

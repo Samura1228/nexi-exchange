@@ -9,6 +9,7 @@ from sqlalchemy import select, not_
 from config import EXCHANGE_TIMEOUT_MINUTES
 from database import async_session, Transaction, User
 from services.swapzone import swapzone
+from services.changenow import changenow
 from locales.texts import get_text
 
 logger = logging.getLogger(__name__)
@@ -78,8 +79,11 @@ async def _process_transaction(bot: Bot, tx: Transaction) -> None:
             # Update the countdown timer in the message
             await _update_waiting_timer(bot, tx, elapsed)
     
-    # Query Swapzone for current status
-    status_data = await swapzone.get_transaction_status(tx.changenow_id)
+    # Query the appropriate provider for current status
+    if getattr(tx, "provider", "swapzone") == "changenow":
+        status_data = await changenow.get_transaction_status(tx.changenow_id)
+    else:
+        status_data = await swapzone.get_transaction_status(tx.changenow_id)
     
     if "error" in status_data:
         logger.warning(f"Could not get status for {tx.changenow_id}: {status_data['error']}")
