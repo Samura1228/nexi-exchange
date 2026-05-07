@@ -51,6 +51,13 @@ class SwapzoneService:
                         error_msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
                         logger.error(f"Swapzone API error: {resp.status} - {error_msg}")
                         return {"error": error_msg, "status_code": resp.status}
+
+                    # Swapzone may return {"error": true, "message": "..."} with HTTP 200
+                    if isinstance(data, dict) and data.get("error") is True:
+                        error_msg = data.get("message", "Unknown exchange error")
+                        logger.warning(f"Swapzone API returned error in body: {error_msg}")
+                        return {"error": error_msg}
+
                     return data
         except aiohttp.ClientError as e:
             logger.error(f"Swapzone API connection error: {e}")
@@ -124,7 +131,7 @@ class SwapzoneService:
         params = {
             "from": from_ticker,
             "to": to_ticker,
-            "amount": "1",
+            "amount": "100",
             "rateType": "floating",
             "availableInUSA": "false",
             "chooseRate": "best",
