@@ -90,11 +90,12 @@ class SwapzoneService:
             return data
 
         # Extract relevant fields from response
-        estimated_amount = data.get("estimatedAmount")
+        # Swapzone returns "amountTo" (not "estimatedAmount")
+        estimated_amount = data.get("amountTo")
         quota_id = data.get("quotaId", "")
 
         if estimated_amount is None:
-            logger.error(f"Swapzone get-rate response missing estimatedAmount: {data}")
+            logger.error(f"Swapzone get-rate response missing amountTo: {data}")
             return {"error": "Invalid response from exchange service"}
 
         return {
@@ -102,7 +103,7 @@ class SwapzoneService:
             "quotaId": quota_id,
             "minAmount": data.get("minAmount"),
             "maxAmount": data.get("maxAmount"),
-            "transactionSpeedForecast": data.get("transactionSpeedForecast", ""),
+            "transactionSpeedForecast": data.get("time", ""),
         }
 
     async def get_min_amount(
