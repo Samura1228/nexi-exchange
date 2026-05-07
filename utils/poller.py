@@ -6,6 +6,7 @@ from decimal import Decimal
 from aiogram import Bot
 from sqlalchemy import select, not_
 
+from config import EXCHANGE_TIMEOUT_MINUTES
 from database import async_session, Transaction, User
 from services.swapzone import swapzone
 from locales.texts import get_text
@@ -13,7 +14,7 @@ from locales.texts import get_text
 logger = logging.getLogger(__name__)
 
 TERMINAL_STATUSES = {"finished", "failed", "refunded", "expired"}
-EXPIRY_HOURS = 24
+EXCHANGE_TIMEOUT_SECONDS = EXCHANGE_TIMEOUT_MINUTES * 60
 
 
 async def _get_user_lang_by_user_id(db_user_id: int) -> str:
@@ -62,14 +63,20 @@ async def _check_pending_transactions(bot: Bot) -> None:
 async def _process_transaction(bot: Bot, tx: Transaction) -> None:
     """Process a single transaction — check status and update if changed."""
     
-    # Check for expiry (waiting for more than 24 hours)
+    # Check for expiry (waiting for more than EXCHANGE_TIMEOUT_MINUTES)
     if tx.status == "waiting" and tx.created_at:
         now = datetime.now(timezone.utc)
         # Handle timezone-naive created_at
         created = tx.created_at if tx.created_at.tzinfo else tx.created_at.replace(tzinfo=timezone.utc)
-        if now - created > timedelta(hours=EXPIRY_HOURS):
-            await _update_transaction_status(bot, tx, "expired", None)
+        elapsed = (now - created).total_seconds()
+        
+        if elapsed >= EXCHANGE_TIMEOUT_SECONDS:
+            # Exchange expired — update status and notify user
+            await _expire_transaction(bot, tx)
             return
+        else:
+            # Update the countdown timer in the message
+            await _update_waiting_timer(bot, tx, elapsed)
     
     # Query Swapzone for current status
     status_data = await swapzone.get_transaction_status(tx.changenow_id)
@@ -87,6 +94,79 @@ async def _process_transaction(bot: Bot, tx: Transaction) -> None:
     # Only update if status actually changed
     if new_status != tx.status:
         await _update_transaction_status(bot, tx, new_status, amount_to)
+
+
+async def _expire_transaction(bot: Bot, tx: Transaction) -> None:
+    """Mark a transaction as expired and notify the user."""
+    # Update database
+    async with async_session() as session:
+        stmt = select(Transaction).where(Transaction.id == tx.id)
+        result = await session.execute(stmt)
+        db_tx = result.scalar_one_or_none()
+        
+        if not db_tx:
+            return
+        
+        db_tx.status = "expired"
+        await session.commit()
+    
+    logger.info(f"Transaction {tx.changenow_id}: waiting → expired (timeout)")
+    
+    # Edit Telegram message
+    if tx.message_id and tx.chat_id:
+        try:
+            lang = await _get_user_lang_by_user_id(tx.user_id)
+            text = get_text("timer_expired", lang)
+            
+            await bot.edit_message_text(
+                text=text,
+                chat_id=tx.chat_id,
+                message_id=tx.message_id,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit expired message for {tx.changenow_id}: {e}")
+
+
+async def _update_waiting_timer(bot: Bot, tx: Transaction, elapsed: float) -> None:
+    """Update the deposit message with the remaining countdown timer."""
+    if not tx.message_id or not tx.chat_id:
+        return
+    
+    remaining_seconds = max(0, EXCHANGE_TIMEOUT_SECONDS - int(elapsed))
+    minutes = remaining_seconds // 60
+    seconds = remaining_seconds % 60
+    timer_str = f"{minutes}:{seconds:02d}"
+    
+    try:
+        lang = await _get_user_lang_by_user_id(tx.user_id)
+        
+        from_currency = tx.from_currency.upper()
+        to_currency = tx.to_currency.upper()
+        
+        # Rebuild the waiting message with updated timer
+        text = (
+            f"✅ **Exchange Created!**\n\n"
+            f"📤 **Send exactly** `{tx.amount_from:.8g}` **{from_currency}** to:\n\n"
+            f"📬 `{tx.deposit_address}`\n\n"
+            f"📥 **Expected:** ~{tx.amount_expected:.8g} {to_currency}\n"
+            f"📬 **To:** `{tx.destination_address}`\n\n"
+            f"🔄 **Status:** ⏳ {get_text('status_waiting', lang)}\n"
+            f"🆔 **Exchange ID:** `{tx.changenow_id}`\n\n"
+            f"{get_text('timer_remaining', lang, minutes=minutes, seconds=seconds)}"
+            f"{get_text('timer_warning', lang)}"
+        )
+        
+        await bot.edit_message_text(
+            text=text,
+            chat_id=tx.chat_id,
+            message_id=tx.message_id,
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        # Suppress "message is not modified" errors which happen if timer text hasn't changed
+        if "message is not modified" not in str(e).lower():
+            logger.warning(f"Could not update timer for {tx.changenow_id}: {e}")
 
 
 async def _update_transaction_status(bot: Bot, tx: Transaction, new_status: str, amount_to=None) -> None:

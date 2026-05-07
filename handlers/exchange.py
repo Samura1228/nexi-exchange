@@ -4,7 +4,7 @@ from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 
-from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT
+from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT, EXCHANGE_TIMEOUT_MINUTES
 from database import async_session, User, Transaction
 from services.swapzone import swapzone
 from services.supabase_client import supabase
@@ -304,15 +304,16 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
         await callback_query.answer()
         return
     
-    # Build the deposit message
+    # Build the deposit message with initial timer
     extra_id_text = get_text("exchange_memo", lang, memo=payin_extra_id) if payin_extra_id else ""
+    initial_timer = f"{EXCHANGE_TIMEOUT_MINUTES}:00"
     
     deposit_msg = await callback_query.message.edit_text(
         get_text("exchange_created", lang,
                  amount=amount, from_display=from_display,
                  deposit_address=deposit_address, extra_id_text=extra_id_text,
                  displayed_estimate=f"{displayed_estimate:.8g}", to_display=to_display,
-                 address=address, changenow_id=changenow_id),
+                 address=address, changenow_id=changenow_id, timer=initial_timer),
         parse_mode="Markdown"
     )
     

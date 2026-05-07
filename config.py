@@ -13,6 +13,9 @@ MARKUP_PERCENT = float(os.getenv("MARKUP_PERCENT", "0.5"))  # 0.5% default marku
 # Referral system
 REFERRAL_PERCENT = float(os.getenv("REFERRAL_PERCENT", "20"))  # 20% of bot's markup goes to referrer
 
+# Exchange timeout (minutes) — auto-cancel if no deposit received
+EXCHANGE_TIMEOUT_MINUTES = int(os.getenv("EXCHANGE_TIMEOUT_MINUTES", "60"))
+
 # Supabase (Admin Dashboard)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")  # e.g., https://xxxxx.supabase.co
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")  # anon/service_role key

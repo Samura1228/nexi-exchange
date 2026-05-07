@@ -42,7 +42,7 @@ TEXTS = {
         "creating_exchange": "⏳ Creating your exchange...",
         "exchange_create_error": "❌ Failed to create exchange.\n\nError: {error}\n\nPlease try again.",
         "exchange_unexpected_error": "❌ Unexpected response from exchange service. Please try again.",
-        "exchange_created": "✅ **Exchange Created!**\n\n📤 **Send exactly** `{amount}` **{from_display}** to:\n\n📬 `{deposit_address}`{extra_id_text}\n\n📥 **You will receive:** ~{displayed_estimate} {to_display}\n📬 **To:** `{address}`\n\n🔄 **Status:** ⏳ Waiting for deposit\n🆔 **Exchange ID:** `{changenow_id}`\n\n_The status will update automatically._",
+        "exchange_created": "✅ **Exchange Created!**\n\n📤 **Send exactly** `{amount}` **{from_display}** to:\n\n📬 `{deposit_address}`{extra_id_text}\n\n📥 **You will receive:** ~{displayed_estimate} {to_display}\n📬 **To:** `{address}`\n\n🔄 **Status:** ⏳ Waiting for deposit\n🆔 **Exchange ID:** `{changenow_id}`\n\n⏳ Time remaining: {timer}\n\n⚠️ Send within 1 hour or the exchange will be cancelled.",
         "exchange_memo": "\n🏷️ **Memo/Tag:** `{memo}`",
         "exchange_cancelled": "❌ Exchange cancelled.\n\n🟢 **Welcome to Nexi Exchange!**\n\nChoose an option below:",
 
@@ -55,6 +55,9 @@ TEXTS = {
         "status_failed": "❌ Exchange failed. Please contact support.",
         "status_refunded": "↩️ Exchange refunded.",
         "status_expired": "⏰ Exchange expired. No deposit received.",
+        "timer_remaining": "⏳ Time remaining: {minutes}:{seconds:02d}",
+        "timer_warning": "\n\n⚠️ Send within 1 hour or the exchange will be cancelled.",
+        "timer_expired": "⏰ Exchange expired. No deposit received within 1 hour.",
 
         # Referrals
         "referral_title": "👥 **Your Referral Dashboard**\n\n🔗 **Your referral link:**\n`{referral_link}`\n\n📊 **Stats:**\n├ 👤 Referrals: **{referral_count}**\n└ 💰 Total earned: **{earnings_str} USDT**\n\n💡 Share your link with friends! You earn **20%** of the exchange fee every time your referral makes a swap.\n\n_Tap the button below to share your link:_",
@@ -126,7 +129,7 @@ TEXTS = {
         "creating_exchange": "⏳ Создаём ваш обмен...",
         "exchange_create_error": "❌ Не удалось создать обмен.\n\nОшибка: {error}\n\nПопробуйте ещё раз.",
         "exchange_unexpected_error": "❌ Неожиданный ответ от сервиса обмена. Попробуйте ещё раз.",
-        "exchange_created": "✅ **Обмен создан!**\n\n📤 **Отправьте ровно** `{amount}` **{from_display}** на:\n\n📬 `{deposit_address}`{extra_id_text}\n\n📥 **Вы получите:** ~{displayed_estimate} {to_display}\n📬 **На:** `{address}`\n\n🔄 **Статус:** ⏳ Ожидание депозита\n🆔 **ID обмена:** `{changenow_id}`\n\n_Статус обновится автоматически._",
+        "exchange_created": "✅ **Обмен создан!**\n\n📤 **Отправьте ровно** `{amount}` **{from_display}** на:\n\n📬 `{deposit_address}`{extra_id_text}\n\n📥 **Вы получите:** ~{displayed_estimate} {to_display}\n📬 **На:** `{address}`\n\n🔄 **Статус:** ⏳ Ожидание депозита\n🆔 **ID обмена:** `{changenow_id}`\n\n⏳ Осталось времени: {timer}\n\n⚠️ Отправьте в течение 1 часа, иначе обмен будет отменён.",
         "exchange_memo": "\n🏷️ **Мемо/Тег:** `{memo}`",
         "exchange_cancelled": "❌ Обмен отменён.\n\n🟢 **Добро пожаловать в Nexi Exchange!**\n\nВыберите действие:",
 
@@ -139,6 +142,9 @@ TEXTS = {
         "status_failed": "❌ Обмен не удался. Обратитесь в поддержку.",
         "status_refunded": "↩️ Средства возвращены.",
         "status_expired": "⏰ Обмен истёк. Депозит не получен.",
+        "timer_remaining": "⏳ Осталось времени: {minutes}:{seconds:02d}",
+        "timer_warning": "\n\n⚠️ Отправьте в течение 1 часа, иначе обмен будет отменён.",
+        "timer_expired": "⏰ Обмен истёк. Депозит не получен в течение 1 часа.",
 
         # Referrals
         "referral_title": "👥 **Ваша реферальная программа**\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`\n\n📊 **Статистика:**\n├ 👤 Рефералов: **{referral_count}**\n└ 💰 Заработано: **{earnings_str} USDT**\n\n💡 Делитесь ссылкой с друзьями! Вы получаете **20%** комиссии с каждого обмена ваших рефералов.\n\n_Нажмите кнопку ниже, чтобы поделиться:_",
