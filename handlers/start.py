@@ -97,8 +97,15 @@ async def command_start(message: types.Message, state: FSMContext, command: Comm
                 user.referral_code = f"ref_{user_id}"
                 await session.commit()
             lang = user.language or "en"
+            referred_by = user.referred_by
 
     await supabase.log_event("user_start", user_id, username, "User started the bot")
+    await supabase.log_user(
+        user_id=user_id,
+        username=username or "",
+        language=lang,
+        referred_by=referred_by
+    )
 
     await message.answer(
         get_text("welcome_back", lang),
@@ -129,6 +136,16 @@ async def language_selected(callback_query: types.CallbackQuery, state: FSMConte
     from_settings = data.get("from_settings", False)
 
     await state.clear()
+
+    # Update Supabase with the new language
+    username = callback_query.from_user.username or ""
+    referred_by = user.referred_by if user else None
+    await supabase.log_user(
+        user_id=user_id,
+        username=username,
+        language=lang,
+        referred_by=referred_by
+    )
 
     if from_settings:
         # Coming from settings — show confirmation and go back to settings

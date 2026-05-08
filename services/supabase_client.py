@@ -133,7 +133,9 @@ class SupabaseClient:
 
     async def log_user(self, user_id: int, username: str = "", language: str = "en",
                        referred_by: int = None):
-        """Log/upsert a user to the 'users_dashboard' table."""
+        """Upsert a user to the 'users_dashboard' table."""
+        if not self.url or not self.key:
+            return False
         data = {
             "user_id": user_id,
             "username": username or "",
@@ -142,7 +144,23 @@ class SupabaseClient:
         }
         if referred_by:
             data["referred_by"] = referred_by
-        await self._post("users_dashboard", data)
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.url}/rest/v1/users_dashboard"
+                headers = {
+                    **self.headers,
+                    "Prefer": "resolution=merge-duplicates,return=minimal"
+                }
+                async with session.post(url, json=data, headers=headers) as resp:
+                    if resp.status in (200, 201, 204):
+                        return True
+                    else:
+                        text = await resp.text()
+                        logger.error(f"Supabase log_user failed: {resp.status} {text}")
+                        return False
+        except Exception as e:
+            logger.error(f"Supabase log_user error: {e}")
+            return False
 
 
 supabase = SupabaseClient()
