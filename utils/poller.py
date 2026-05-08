@@ -11,6 +11,7 @@ from database import async_session, Transaction, User
 from services.swapzone import swapzone
 from services.changenow import changenow
 from locales.texts import get_text
+from utils import format_amount
 
 logger = logging.getLogger(__name__)
 
@@ -151,9 +152,9 @@ async def _update_waiting_timer(bot: Bot, tx: Transaction, elapsed: float) -> No
         # Rebuild the waiting message with updated timer
         text = (
             f"✅ **Exchange Created!**\n\n"
-            f"📤 **Send exactly** `{tx.amount_from:.8g}` **{from_currency}** to:\n\n"
+            f"📤 **Send exactly** `{format_amount(tx.amount_from)}` **{from_currency}** to:\n\n"
             f"📬 `{tx.deposit_address}`\n\n"
-            f"📥 **Expected:** ~{tx.amount_expected:.8g} {to_currency}\n"
+            f"📥 **Expected:** ~{format_amount(tx.amount_expected)} {to_currency}\n"
             f"📬 **To:** `{tx.destination_address}`\n\n"
             f"🔄 **Status:** ⏳ {get_text('status_waiting', lang)}\n"
             f"🆔 **Exchange ID:** `{tx.changenow_id}`\n\n"
@@ -200,20 +201,21 @@ async def _update_transaction_status(bot: Bot, tx: Transaction, new_status: str,
             # Get user's language
             lang = await _get_user_lang_by_user_id(tx.user_id)
             
-            status_text = get_text(f"status_{new_status}", lang)
-            
             # Build updated message
             from_currency = tx.from_currency.upper()
             to_currency = tx.to_currency.upper()
             
             if new_status == "finished" and amount_to:
-                amount_line = f"📥 **Received:** {amount_to} {to_currency}"
+                received_amount = format_amount(amount_to)
+                status_text = get_text(f"status_{new_status}", lang, amount=received_amount, currency=to_currency)
+                amount_line = f"📥 **Received:** {received_amount} {to_currency}"
             else:
-                amount_line = f"📥 **Expected:** ~{tx.amount_expected:.8g} {to_currency}"
+                status_text = get_text(f"status_{new_status}", lang)
+                amount_line = f"📥 **Expected:** ~{format_amount(tx.amount_expected)} {to_currency}"
             
             text = (
-                f"{'✅' if new_status == 'finished' else '🔄'} **Exchange Update**\n\n"
-                f"📤 **Sent:** {tx.amount_from:.8g} {from_currency}\n"
+                f"{'✅' if new_status == 'finished' else '🔄'} **{'Exchange Complete!' if new_status == 'finished' else 'Exchange Update'}**\n\n"
+                f"📤 **Sent:** {format_amount(tx.amount_from)} {from_currency}\n"
                 f"{amount_line}\n"
                 f"📬 **To:** `{tx.destination_address}`\n\n"
                 f"🔄 **Status:** {status_text}\n"

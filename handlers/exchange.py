@@ -9,6 +9,7 @@ from database import async_session, User, Transaction
 from services.swapzone import swapzone
 from services.changenow import changenow
 from services.supabase_client import supabase
+from utils import format_amount
 from utils.states import ExchangeState
 from keyboards.builders import (
     get_currency_keyboard,
@@ -136,7 +137,7 @@ async def process_to_selection(callback_query: types.CallbackQuery, state: FSMCo
     await state.update_data(min_amount=min_amount, provider=provider)
     
     await callback_query.message.edit_text(
-        get_text("enter_amount", lang, from_display=from_display, to_display=display, min_amount=min_amount),
+        get_text("enter_amount", lang, from_display=from_display, to_display=display, min_amount=format_amount(min_amount)),
         reply_markup=get_cancel_keyboard(lang=lang),
         parse_mode="Markdown"
     )
@@ -165,7 +166,7 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     
     if amount < min_amount:
         await message.answer(
-            get_text("amount_below_min", lang, min_amount=min_amount, from_display=data['from_display']),
+            get_text("amount_below_min", lang, min_amount=format_amount(min_amount), from_display=data['from_display']),
             reply_markup=get_cancel_keyboard(lang=lang)
         )
         return
@@ -231,8 +232,8 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
     
     await loading_msg.edit_text(
         get_text("exchange_quote", lang,
-                 amount=amount, from_display=from_display,
-                 displayed_estimate=f"{displayed_estimate:.8g}", to_display=to_display),
+                 amount=format_amount(amount), from_display=from_display,
+                 displayed_estimate=format_amount(displayed_estimate), to_display=to_display),
         reply_markup=get_cancel_keyboard(lang=lang),
         parse_mode="Markdown"
     )
@@ -263,8 +264,8 @@ async def process_address(message: types.Message, state: FSMContext) -> None:
     
     await message.answer(
         get_text("confirm_exchange", lang,
-                 amount=amount, from_display=from_display,
-                 displayed_estimate=f"{displayed_estimate:.8g}", to_display=to_display,
+                 amount=format_amount(amount), from_display=from_display,
+                 displayed_estimate=format_amount(displayed_estimate), to_display=to_display,
                  address=address),
         reply_markup=get_confirm_keyboard(lang=lang),
         parse_mode="Markdown"
@@ -357,9 +358,9 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     
     deposit_msg = await callback_query.message.edit_text(
         get_text("exchange_created", lang,
-                 amount=amount, from_display=from_display,
+                 amount=format_amount(amount), from_display=from_display,
                  deposit_address=deposit_address, extra_id_text=extra_id_text,
-                 displayed_estimate=f"{displayed_estimate:.8g}", to_display=to_display,
+                 displayed_estimate=format_amount(displayed_estimate), to_display=to_display,
                  address=address, changenow_id=changenow_id, timer=initial_timer),
         parse_mode="Markdown"
     )
@@ -423,8 +424,8 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
                     await bot.send_message(
                         referrer.telegram_id,
                         get_text("referral_earned", referrer_lang,
-                                 amount=f"{referrer_commission:.8f}", currency=from_display,
-                                 total=f"{referrer.referral_earnings:.6f}"),
+                                 amount=format_amount(referrer_commission), currency=from_display,
+                                 total=format_amount(referrer.referral_earnings)),
                         parse_mode="Markdown"
                     )
                 except Exception as e:
@@ -435,7 +436,7 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
             logger.info(f"[referral] User {user_id} has no referrer (referred_by={getattr(exchange_user, 'referred_by', 'N/A')})")
 
     await supabase.log_exchange(user_id, from_display, to_display, float(amount), float(displayed_estimate), "created", changenow_id)
-    await supabase.log_event("exchange_created", user_id, username, f"{amount} {from_display} → ~{displayed_estimate:.8g} {to_display} | ID: {changenow_id}")
+    await supabase.log_event("exchange_created", user_id, username, f"{format_amount(amount)} {from_display} → ~{format_amount(displayed_estimate)} {to_display} | ID: {changenow_id}")
     
     await state.clear()
     await callback_query.answer()
