@@ -397,12 +397,14 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     
     # ── Referral commission ──────────────────────────────────────────
     # Credit the referrer with a percentage of the bot's markup
+    logger.info(f"[referral] Checking referral commission for user {user_id}")
     async with async_session() as session:
         stmt = select(User).where(User.telegram_id == user_id)
         result_user = await session.execute(stmt)
         exchange_user = result_user.scalar_one_or_none()
 
         if exchange_user and exchange_user.referred_by:
+            logger.info(f"[referral] User {user_id} was referred by {exchange_user.referred_by}, calculating commission")
             # Commission = amount * (MARKUP_PERCENT/100) * (REFERRAL_PERCENT/100)
             referrer_commission = Decimal(str(amount)) * (Decimal(str(MARKUP_PERCENT)) / Decimal("100")) * (Decimal(str(REFERRAL_PERCENT)) / Decimal("100"))
 
@@ -413,7 +415,7 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
             if referrer:
                 referrer.referral_earnings = (referrer.referral_earnings or Decimal("0")) + referrer_commission
                 await session.commit()
-                logger.info(f"Referral commission {referrer_commission} credited to {referrer.telegram_id}")
+                logger.info(f"[referral] Commission {referrer_commission} credited to referrer {referrer.telegram_id}, total={referrer.referral_earnings}")
 
                 # Notify referrer about the commission
                 referrer_lang = referrer.language or "en"
@@ -426,7 +428,11 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
                         parse_mode="Markdown"
                     )
                 except Exception as e:
-                    logger.warning(f"Could not notify referrer {referrer.telegram_id}: {e}")
+                    logger.warning(f"[referral] Could not notify referrer {referrer.telegram_id}: {e}")
+            else:
+                logger.warning(f"[referral] Referrer {exchange_user.referred_by} not found in database")
+        else:
+            logger.info(f"[referral] User {user_id} has no referrer (referred_by={getattr(exchange_user, 'referred_by', 'N/A')})")
 
     await supabase.log_exchange(user_id, from_display, to_display, float(amount), float(displayed_estimate), "created", changenow_id)
     await supabase.log_event("exchange_created", user_id, username, f"{amount} {from_display} → ~{displayed_estimate:.8g} {to_display} | ID: {changenow_id}")

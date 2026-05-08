@@ -23,13 +23,17 @@ async def command_start(message: types.Message, state: FSMContext, command: Comm
 
     # Parse deep link parameter (e.g. /start ref_123456)
     referrer_id = None
+    logger.info(f"[referral] /start from user {user_id}, command.args={command.args!r}")
     if command.args and command.args.startswith("ref_"):
         try:
             referrer_id = int(command.args[4:])
+            logger.info(f"[referral] Parsed referrer_id={referrer_id} for user {user_id}")
             # Don't let users refer themselves
             if referrer_id == user_id:
                 referrer_id = None
+                logger.info(f"[referral] Self-referral blocked for user {user_id}")
         except (ValueError, IndexError):
+            logger.warning(f"[referral] Failed to parse referrer from args: {command.args!r}")
             referrer_id = None
 
     async with async_session() as session:
@@ -47,16 +51,18 @@ async def command_start(message: types.Message, state: FSMContext, command: Comm
             )
             session.add(new_user)
             await session.commit()
-            logger.info(f"New user registered: {user_id} (@{username}), referred_by={referrer_id}")
+            logger.info(f"[referral] New user registered: {user_id} (@{username}), referred_by={referrer_id}")
 
             # If referred by someone, update referrer's count and notify them
             if referrer_id:
+                logger.info(f"[referral] Processing referral: user {user_id} referred by {referrer_id}")
                 referrer_stmt = select(User).where(User.telegram_id == referrer_id)
                 referrer_result = await session.execute(referrer_stmt)
                 referrer = referrer_result.scalar_one_or_none()
                 if referrer:
                     referrer.referral_count += 1
                     await session.commit()
+                    logger.info(f"[referral] Referrer {referrer_id} count incremented to {referrer.referral_count}")
                     referrer_lang = referrer.language or "en"
                     # Notify the referrer
                     try:
@@ -66,7 +72,9 @@ async def command_start(message: types.Message, state: FSMContext, command: Comm
                             parse_mode="Markdown"
                         )
                     except Exception as e:
-                        logger.warning(f"Could not notify referrer {referrer_id}: {e}")
+                        logger.warning(f"[referral] Could not notify referrer {referrer_id}: {e}")
+                else:
+                    logger.warning(f"[referral] Referrer {referrer_id} not found in database")
 
             # Show language selection for new users
             await message.answer(
