@@ -102,12 +102,34 @@ class SupabaseClient:
             "user_id": user_id,
             "from_currency": from_currency,
             "to_currency": to_currency,
-            "amount_from": float(amount_from),
-            "amount_to": float(amount_to),
+            "amount_from": round(float(amount_from), 10),
+            "amount_to": round(float(amount_to), 10),
             "status": status,
             "tx_id": tx_id,
             "created_at": datetime.utcnow().isoformat()
         })
+
+    async def update_exchange_status(self, tx_id: str, status: str, amount_to: float = None) -> bool:
+        """Update an exchange's status in Supabase by tx_id."""
+        if not self.url or not self.key:
+            return False
+        data = {"status": status}
+        if amount_to is not None:
+            data["amount_to"] = round(float(amount_to), 10)
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.url}/rest/v1/exchanges?tx_id=eq.{tx_id}"
+                headers = {**self.headers, "Prefer": "return=minimal"}
+                async with session.patch(url, json=data, headers=headers) as resp:
+                    if resp.status in (200, 204):
+                        return True
+                    else:
+                        text = await resp.text()
+                        logger.error(f"Supabase update for {tx_id} failed: {resp.status} {text}")
+                        return False
+        except Exception as e:
+            logger.error(f"Supabase update error: {e}")
+            return False
 
     async def log_user(self, user_id: int, username: str = "", language: str = "en",
                        referred_by: int = None):

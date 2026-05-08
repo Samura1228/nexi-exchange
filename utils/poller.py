@@ -10,6 +10,7 @@ from config import EXCHANGE_TIMEOUT_MINUTES
 from database import async_session, Transaction, User
 from services.swapzone import swapzone
 from services.changenow import changenow
+from services.supabase_client import supabase
 from locales.texts import get_text
 from utils import format_amount
 
@@ -117,6 +118,9 @@ async def _expire_transaction(bot: Bot, tx: Transaction) -> None:
     
     logger.info(f"Transaction {tx.changenow_id}: waiting → expired (timeout)")
     
+    # Update Supabase status to "incomplete"
+    await supabase.update_exchange_status(tx.changenow_id, "incomplete")
+    
     # Edit Telegram message
     if tx.message_id and tx.chat_id:
         try:
@@ -194,6 +198,12 @@ async def _update_transaction_status(bot: Bot, tx: Transaction, new_status: str,
         await session.commit()
     
     logger.info(f"Transaction {tx.changenow_id}: {old_status} → {new_status}")
+    
+    # Update Supabase status
+    if new_status == "finished":
+        await supabase.update_exchange_status(tx.changenow_id, "complete", amount_to)
+    elif new_status in ("failed", "refunded"):
+        await supabase.update_exchange_status(tx.changenow_id, new_status)
     
     # Edit Telegram message if we have message_id and chat_id
     if tx.message_id and tx.chat_id:
