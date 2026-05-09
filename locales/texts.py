@@ -104,6 +104,21 @@ TEXTS = {
         "alert_triggered": "🔔 **Price Alert Triggered!**\n\n{direction_emoji} **{currency}** is now {direction} **${target_price:,.2f}**!\nCurrent price: **${current_price:,.2f}**\n\nYour alert for {currency} {direction} ${target_price:,.2f} has been triggered and removed.",
         "alert_error_price_fetch": "❌ Could not fetch current price. Please try again later.",
 
+        # Promo codes
+        "btn_promo": "🎟️ Promo Code",
+        "btn_my_promos": "📋 My Promos",
+        "btn_back_promo": "🔙 Back to Promo",
+        "promo_menu": "🎟️ **Promo Codes**\n\nEnter a promo code to get discounted exchange fees!\n\nChoose an option:",
+        "promo_enter": "🎟️ Enter your promo code:",
+        "promo_activated": "✅ Promo code activated!\n\n💰 {discount}% off exchange fees\n📊 Valid for {uses} exchanges",
+        "promo_invalid": "❌ Invalid or expired promo code.",
+        "promo_already_used": "❌ You've already used this promo code.",
+        "promo_max_reached": "❌ This promo code has reached its maximum number of uses.",
+        "promo_applied": "💰 Promo applied: {discount}% off fees!",
+        "promo_active": "🎟️ **Active Promo:** `{code}`\n💰 {discount}% off fees\n📊 {remaining} exchange(s) remaining",
+        "promo_none": "You don't have any active promo codes.",
+        "promo_list_title": "🎟️ **Your Active Promos:**\n\n",
+
         # Errors
         "error_generic": "❌ Something went wrong. Please try again.",
     },
@@ -210,6 +225,21 @@ TEXTS = {
         "alert_deleted": "🗑️ Оповещение удалено.",
         "alert_triggered": "🔔 **Ценовое оповещение сработало!**\n\n{direction_emoji} **{currency}** сейчас {direction} **${target_price:,.2f}**!\nТекущая цена: **${current_price:,.2f}**\n\nВаше оповещение для {currency} {direction} ${target_price:,.2f} сработало и удалено.",
         "alert_error_price_fetch": "❌ Не удалось получить текущую цену. Попробуйте позже.",
+
+        # Promo codes
+        "btn_promo": "🎟️ Промокод",
+        "btn_my_promos": "📋 Мои промокоды",
+        "btn_back_promo": "🔙 Назад к промокодам",
+        "promo_menu": "🎟️ **Промокоды**\n\nВведите промокод, чтобы получить скидку на комиссию обмена!\n\nВыберите действие:",
+        "promo_enter": "🎟️ Введите ваш промокод:",
+        "promo_activated": "✅ Промокод активирован!\n\n💰 Скидка {discount}% на комиссию обмена\n📊 Действует на {uses} обмен(ов)",
+        "promo_invalid": "❌ Недействительный или просроченный промокод.",
+        "promo_already_used": "❌ Вы уже использовали этот промокод.",
+        "promo_max_reached": "❌ Этот промокод достиг максимального количества использований.",
+        "promo_applied": "💰 Промокод применён: скидка {discount}% на комиссию!",
+        "promo_active": "🎟️ **Активный промокод:** `{code}`\n💰 Скидка {discount}% на комиссию\n📊 Осталось {remaining} обмен(ов)",
+        "promo_none": "У вас нет активных промокодов.",
+        "promo_list_title": "🎟️ **Ваши активные промокоды:**\n\n",
 
         # Errors
         "error_generic": "❌ Что-то пошло не так. Попробуйте ещё раз.",

@@ -7,7 +7,7 @@ from aiogram.types import BotCommand
 
 from config import BOT_TOKEN
 from database import init_db, migrate_db
-from handlers import start, exchange, skins, history, settings, referral, support, alerts
+from handlers import start, exchange, skins, history, settings, referral, support, alerts, promo
 from utils.poller import poll_transactions
 from utils.price_checker import check_price_alerts
 
@@ -30,6 +30,7 @@ async def main() -> None:
     dp.include_router(support.router)
     dp.include_router(exchange.router)
     dp.include_router(alerts.router)
+    dp.include_router(promo.router)
     dp.include_router(referral.router)
     dp.include_router(skins.router)
     dp.include_router(history.router)

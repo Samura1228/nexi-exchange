@@ -91,6 +91,29 @@ class SkinTransaction(Base):
     user: Mapped["User"] = relationship(back_populates="skin_transactions")
 
 
+class PromoCode(Base):
+    __tablename__ = "promo_codes"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String, unique=True, nullable=False)  # e.g., "WELCOME"
+    discount_percent: Mapped[int] = mapped_column(Integer, nullable=False)  # e.g., 50 (50% off fees)
+    max_uses: Mapped[int] = mapped_column(Integer, server_default=text("100"), nullable=False)  # total uses allowed
+    uses_per_user: Mapped[int] = mapped_column(Integer, server_default=text("3"), nullable=False)  # uses per user
+    current_uses: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)  # total times used
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)  # optional expiry
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserPromo(Base):
+    __tablename__ = "user_promos"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    promo_code_id: Mapped[int] = mapped_column(ForeignKey("promo_codes.id"), nullable=False)
+    uses_remaining: Mapped[int] = mapped_column(Integer, nullable=False)  # decrements on each exchange
+    discount_percent: Mapped[int] = mapped_column(Integer, nullable=False)
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PriceAlert(Base):
     __tablename__ = "price_alerts"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

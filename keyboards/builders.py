@@ -28,6 +28,7 @@ def get_start_keyboard(user_id: int = 0, lang: str = "en") -> InlineKeyboardMark
         buttons.append([InlineKeyboardButton(text=get_text("btn_skins", lang), callback_data="start_skins")])
     if user_id in BETA_TEST_USER_IDS:
         buttons.append([InlineKeyboardButton(text=get_text("btn_alerts", lang), callback_data="price_alerts")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_promo", lang), callback_data="promo_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -262,6 +263,33 @@ def get_alert_list_keyboard(alerts: list, lang: str = "en") -> InlineKeyboardMar
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"alert_del:{alert.id}")])
     buttons.append([InlineKeyboardButton(text=get_text("btn_back_alerts", lang), callback_data="price_alerts")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+# ── Promo Code keyboards ──────────────────────────────────────────────
+
+
+def get_promo_menu_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
+    """Promo codes main menu keyboard."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎟️ " + get_text("promo_enter", lang).replace("🎟️ ", ""), callback_data="promo_enter")],
+        [InlineKeyboardButton(text=get_text("btn_my_promos", lang), callback_data="promo_my")],
+        [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="back_to_start")],
+    ])
+
+
+def get_promo_cancel_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
+    """Cancel keyboard during promo code entry."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("btn_back_promo", lang), callback_data="promo_menu")],
+    ])
+
+
+def get_promo_back_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
+    """Back to promo menu keyboard."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("btn_back_promo", lang), callback_data="promo_menu")],
+        [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="back_to_start")],
+    ])
 
 
 # ── Support keyboards ─────────────────────────────────────────────────

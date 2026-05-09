@@ -2,10 +2,10 @@ import logging
 from decimal import Decimal
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
 from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT, EXCHANGE_TIMEOUT_MINUTES, CHANGENOW_API_KEY
-from database import async_session, User, Transaction
+from database import async_session, User, Transaction, UserPromo, PromoCode
 from services.swapzone import swapzone
 from services.changenow import changenow
 from services.supabase_client import supabase
@@ -220,7 +220,30 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
         return
     
     # Apply markup (reduce estimated amount by MARKUP_PERCENT so bot owner earns the difference)
-    markup_factor = 1 - (MARKUP_PERCENT / 100)
+    effective_markup = MARKUP_PERCENT
+
+    # Check if user has an active promo code
+    promo_discount = 0
+    promo_text = ""
+    async with async_session() as session:
+        promo_stmt = select(UserPromo, PromoCode).join(
+            PromoCode, UserPromo.promo_code_id == PromoCode.id
+        ).where(
+            and_(
+                UserPromo.telegram_id == message.from_user.id,
+                UserPromo.uses_remaining > 0,
+            )
+        ).order_by(UserPromo.activated_at.asc()).limit(1)
+        promo_result = await session.execute(promo_stmt)
+        promo_row = promo_result.first()
+
+        if promo_row:
+            user_promo, promo_code = promo_row
+            promo_discount = user_promo.discount_percent
+            effective_markup = MARKUP_PERCENT * (1 - promo_discount / 100)
+            promo_text = "\n\n" + get_text("promo_applied", lang, discount=promo_discount)
+
+    markup_factor = 1 - (effective_markup / 100)
     displayed_estimate = estimated_amount * markup_factor
     
     await state.update_data(
@@ -228,12 +251,13 @@ async def process_amount(message: types.Message, state: FSMContext) -> None:
         estimated_amount=estimated_amount,
         displayed_estimate=displayed_estimate,
         quota_id=quota_id,
+        promo_discount=promo_discount,
     )
     
     await loading_msg.edit_text(
         get_text("exchange_quote", lang,
                  amount=format_amount(amount), from_display=from_display,
-                 displayed_estimate=format_amount(displayed_estimate), to_display=to_display),
+                 displayed_estimate=format_amount(displayed_estimate), to_display=to_display) + promo_text,
         reply_markup=get_cancel_keyboard(lang=lang),
         parse_mode="Markdown"
     )
@@ -396,6 +420,25 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
         session.add(transaction)
         await session.commit()
     
+    # ── Promo code usage ─────────────────────────────────────────────
+    # If user had a promo discount, decrement their uses_remaining
+    promo_discount = data.get('promo_discount', 0)
+    if promo_discount > 0:
+        async with async_session() as session:
+            promo_stmt = select(UserPromo).where(
+                and_(
+                    UserPromo.telegram_id == user_id,
+                    UserPromo.uses_remaining > 0,
+                )
+            ).order_by(UserPromo.activated_at.asc()).limit(1)
+            promo_result = await session.execute(promo_stmt)
+            user_promo = promo_result.scalar_one_or_none()
+
+            if user_promo:
+                user_promo.uses_remaining -= 1
+                await session.commit()
+                logger.info(f"[promo] User {user_id}: promo uses_remaining decremented to {user_promo.uses_remaining}")
+
     # ── Referral commission ──────────────────────────────────────────
     # Credit the referrer with a percentage of the bot's markup
     logger.info(f"[referral] Checking referral commission for user {user_id}")

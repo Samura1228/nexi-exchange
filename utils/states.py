@@ -27,6 +27,11 @@ class AlertState(StatesGroup):
     enter_price = State()       # User entering target price
 
 
+class PromoState(StatesGroup):
+    """FSM states for the promo code flow."""
+    enter_code = State()       # User is entering a promo code
+
+
 class SupportState(StatesGroup):
     """FSM states for the support chat flow."""
     waiting_message = State()  # User is typing their support message
