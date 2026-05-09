@@ -29,6 +29,7 @@ def get_start_keyboard(user_id: int = 0, lang: str = "en") -> InlineKeyboardMark
     if user_id in BETA_TEST_USER_IDS:
         buttons.append([InlineKeyboardButton(text=get_text("btn_alerts", lang), callback_data="price_alerts")])
         buttons.append([InlineKeyboardButton(text=get_text("btn_promo", lang), callback_data="promo_menu")])
+        buttons.append([InlineKeyboardButton(text=get_text("btn_buy_crypto", lang), callback_data="buy_crypto")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

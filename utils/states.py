@@ -35,3 +35,10 @@ class PromoState(StatesGroup):
 class SupportState(StatesGroup):
     """FSM states for the support chat flow."""
     waiting_message = State()  # User is typing their support message
+
+
+class BuyCryptoState(StatesGroup):
+    """FSM states for the buy crypto with card flow."""
+    select_crypto = State()    # User selecting which crypto to buy
+    enter_amount = State()     # User entering USD amount
+    enter_address = State()    # User entering wallet address

@@ -122,6 +122,17 @@ TEXTS = {
         # Repeat exchange
         "btn_repeat_exchange": "🔄 Repeat Exchange",
 
+        # Buy Crypto (Fiat On-Ramp)
+        "btn_buy_crypto": "💳 Buy Crypto",
+        "buy_crypto_title": "💳 Buy Crypto with Card",
+        "buy_select_crypto": "Select which crypto you want to buy:",
+        "buy_enter_amount": "Enter the amount in USD you want to spend:\n\n(Minimum: $30)",
+        "buy_enter_address": "Enter your {crypto} wallet address to receive the crypto:",
+        "buy_invalid_amount": "❌ Please enter a valid amount (minimum $30).",
+        "buy_providers": "💳 Buy {amount} USD of {crypto}\n\n📬 To: `{address}`\n\nChoose a provider below to complete your purchase:",
+        "buy_note": "\n\n💡 You'll be redirected to a secure payment page. The crypto will be sent directly to your wallet.",
+        "buy_cancelled": "❌ Purchase cancelled.",
+
         # Volume badge
         "volume_badge": "\n\n🏆 {exchanges}+ exchanges completed | Trusted by {users}+ users",
 
@@ -249,6 +260,17 @@ TEXTS = {
 
         # Repeat exchange
         "btn_repeat_exchange": "🔄 Повторить обмен",
+
+        # Buy Crypto (Fiat On-Ramp)
+        "btn_buy_crypto": "💳 Купить крипту",
+        "buy_crypto_title": "💳 Купить крипту картой",
+        "buy_select_crypto": "Выберите какую крипту хотите купить:",
+        "buy_enter_amount": "Введите сумму в USD которую хотите потратить:\n\n(Минимум: $30)",
+        "buy_enter_address": "Введите адрес вашего {crypto} кошелька для получения крипты:",
+        "buy_invalid_amount": "❌ Введите корректную сумму (минимум $30).",
+        "buy_providers": "💳 Купить {crypto} на {amount} USD\n\n📬 На: `{address}`\n\nВыберите провайдера для оплаты:",
+        "buy_note": "\n\n💡 Вы будете перенаправлены на безопасную страницу оплаты. Крипта будет отправлена напрямую на ваш кошелёк.",
+        "buy_cancelled": "❌ Покупка отменена.",
 
         # Volume badge
         "volume_badge": "\n\n🏆 {exchanges}+ обменов завершено | {users}+ пользователей доверяют нам",
