@@ -119,6 +119,12 @@ TEXTS = {
         "promo_none": "You don't have any active promo codes.",
         "promo_list_title": "🎟️ **Your Active Promos:**\n\n",
 
+        # Repeat exchange
+        "btn_repeat_exchange": "🔄 Repeat Exchange",
+
+        # Volume badge
+        "volume_badge": "\n\n🏆 {exchanges}+ exchanges completed | Trusted by {users}+ users",
+
         # Errors
         "error_generic": "❌ Something went wrong. Please try again.",
     },
@@ -240,6 +246,12 @@ TEXTS = {
         "promo_active": "🎟️ **Активный промокод:** `{code}`\n💰 Скидка {discount}% на комиссию\n📊 Осталось {remaining} обмен(ов)",
         "promo_none": "У вас нет активных промокодов.",
         "promo_list_title": "🎟️ **Ваши активные промокоды:**\n\n",
+
+        # Repeat exchange
+        "btn_repeat_exchange": "🔄 Повторить обмен",
+
+        # Volume badge
+        "volume_badge": "\n\n🏆 {exchanges}+ обменов завершено | {users}+ пользователей доверяют нам",
 
         # Errors
         "error_generic": "❌ Что-то пошло не так. Попробуйте ещё раз.",

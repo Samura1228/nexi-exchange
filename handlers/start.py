@@ -2,15 +2,39 @@ import logging
 from aiogram import Router, types, F, Bot
 from aiogram.filters import CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select
+from sqlalchemy import select, func
 
-from database import async_session, User
+from config import BETA_TEST_USER_IDS
+from database import async_session, User, Transaction
 from keyboards.builders import get_start_keyboard, get_language_keyboard
 from locales.texts import get_text
 from services.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+
+async def _get_volume_badge(lang: str) -> str:
+    """Get volume badge text showing total completed exchanges and unique users."""
+    async with async_session() as session:
+        # Count completed exchanges
+        exchange_count_stmt = select(func.count(Transaction.id)).where(
+            Transaction.status == "finished"
+        )
+        exchange_result = await session.execute(exchange_count_stmt)
+        exchange_count = exchange_result.scalar() or 0
+
+        # Count unique users who completed exchanges
+        user_count_stmt = select(func.count(func.distinct(Transaction.user_id))).where(
+            Transaction.status == "finished"
+        )
+        user_result = await session.execute(user_count_stmt)
+        user_count = user_result.scalar() or 0
+
+    if exchange_count == 0:
+        return ""
+
+    return get_text("volume_badge", lang, exchanges=exchange_count, users=user_count)
 
 
 @router.message(CommandStart())
@@ -107,8 +131,15 @@ async def command_start(message: types.Message, state: FSMContext, command: Comm
         referred_by=referred_by
     )
 
+    welcome_text = get_text("welcome_back", lang)
+
+    # Volume badge for beta test users
+    if user_id in BETA_TEST_USER_IDS:
+        volume_badge = await _get_volume_badge(lang)
+        welcome_text += volume_badge
+
     await message.answer(
-        get_text("welcome_back", lang),
+        welcome_text,
         reply_markup=get_start_keyboard(user_id=message.from_user.id, lang=lang),
         parse_mode="Markdown"
     )
@@ -178,8 +209,15 @@ async def back_to_start(callback_query: types.CallbackQuery, state: FSMContext) 
         user = result.scalar_one_or_none()
         lang = user.language if user else "en"
 
+    welcome_text = get_text("welcome_back", lang)
+
+    # Volume badge for beta test users
+    if user_id in BETA_TEST_USER_IDS:
+        volume_badge = await _get_volume_badge(lang)
+        welcome_text += volume_badge
+
     await callback_query.message.edit_text(
-        get_text("welcome_back", lang),
+        welcome_text,
         reply_markup=get_start_keyboard(user_id=user_id, lang=lang),
         parse_mode="Markdown"
     )

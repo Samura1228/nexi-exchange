@@ -6,13 +6,14 @@ from decimal import Decimal
 from aiogram import Bot
 from sqlalchemy import select, not_
 
-from config import EXCHANGE_TIMEOUT_MINUTES
+from config import EXCHANGE_TIMEOUT_MINUTES, BETA_TEST_USER_IDS
 from database import async_session, Transaction, User
 from services.swapzone import swapzone
 from services.changenow import changenow
 from services.supabase_client import supabase
 from locales.texts import get_text
 from utils import format_amount
+from keyboards.builders import get_repeat_exchange_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,17 @@ async def _get_user_lang_by_user_id(db_user_id: int) -> str:
         result = await session.execute(stmt)
         user = result.scalar_one_or_none()
         return user.language if user else "en"
+
+
+async def _get_user_info_by_user_id(db_user_id: int) -> tuple[str, int]:
+    """Get user language and telegram_id by internal user ID."""
+    async with async_session() as session:
+        stmt = select(User).where(User.id == db_user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            return user.language or "en", user.telegram_id
+        return "en", 0
 
 
 async def poll_transactions(bot: Bot) -> None:
@@ -208,8 +220,8 @@ async def _update_transaction_status(bot: Bot, tx: Transaction, new_status: str,
     # Edit Telegram message if we have message_id and chat_id
     if tx.message_id and tx.chat_id:
         try:
-            # Get user's language
-            lang = await _get_user_lang_by_user_id(tx.user_id)
+            # Get user's language and telegram_id
+            lang, telegram_id = await _get_user_info_by_user_id(tx.user_id)
             
             # Build updated message
             from_currency = tx.from_currency.upper()
@@ -232,11 +244,17 @@ async def _update_transaction_status(bot: Bot, tx: Transaction, new_status: str,
                 f"🆔 **Exchange ID:** `{tx.changenow_id}`"
             )
             
+            # Show repeat exchange button for beta test users on finished exchanges
+            reply_markup = None
+            if new_status == "finished" and telegram_id in BETA_TEST_USER_IDS:
+                reply_markup = get_repeat_exchange_keyboard(tx.id, lang=lang)
+            
             await bot.edit_message_text(
                 text=text,
                 chat_id=tx.chat_id,
                 message_id=tx.message_id,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
             )
         except Exception as e:
             logger.warning(f"Could not edit message for {tx.changenow_id}: {e}")

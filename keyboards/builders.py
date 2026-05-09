@@ -292,6 +292,17 @@ def get_promo_back_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
     ])
 
 
+# ── Repeat Exchange keyboard ──────────────────────────────────────────
+
+
+def get_repeat_exchange_keyboard(tx_id: int, lang: str = "en") -> InlineKeyboardMarkup:
+    """Keyboard shown after a successful exchange with a Repeat button."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("btn_repeat_exchange", lang), callback_data=f"repeat:{tx_id}")],
+        [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="back_to_start")],
+    ])
+
+
 # ── Support keyboards ─────────────────────────────────────────────────
 
 

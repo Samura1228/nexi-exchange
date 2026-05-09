@@ -4,7 +4,7 @@ from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, and_
 
-from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT, EXCHANGE_TIMEOUT_MINUTES, CHANGENOW_API_KEY
+from config import SUPPORTED_CURRENCIES, MARKUP_PERCENT, REFERRAL_PERCENT, EXCHANGE_TIMEOUT_MINUTES, CHANGENOW_API_KEY, BETA_TEST_USER_IDS
 from database import async_session, User, Transaction, UserPromo, PromoCode
 from services.swapzone import swapzone
 from services.changenow import changenow
@@ -482,6 +482,94 @@ async def confirm_exchange(callback_query: types.CallbackQuery, state: FSMContex
     await supabase.log_event("exchange_created", user_id, username, f"{format_amount(amount)} {from_display} → ~{format_amount(displayed_estimate)} {to_display} | ID: {changenow_id}")
     
     await state.clear()
+    await callback_query.answer()
+
+
+@router.callback_query(F.data.startswith("repeat:"))
+async def repeat_exchange(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    """Handle repeat exchange — pre-fill FROM/TO currencies and amount from a previous transaction."""
+    user_id = callback_query.from_user.id
+
+    # Only allow beta test users
+    if user_id not in BETA_TEST_USER_IDS:
+        await callback_query.answer("Feature not available.", show_alert=True)
+        return
+
+    tx_id_str = callback_query.data.split(":")[1]
+    try:
+        tx_id = int(tx_id_str)
+    except (ValueError, IndexError):
+        await callback_query.answer("Invalid transaction.", show_alert=True)
+        return
+
+    # Look up the original transaction
+    async with async_session() as session:
+        stmt = select(Transaction).where(Transaction.id == tx_id)
+        result = await session.execute(stmt)
+        tx = result.scalar_one_or_none()
+
+    if not tx:
+        await callback_query.answer("Transaction not found.", show_alert=True)
+        return
+
+    lang = await _get_user_lang(user_id)
+
+    from_ticker = tx.from_currency
+    from_network = tx.from_network
+    to_ticker = tx.to_currency
+    to_network = tx.to_network
+    from_display = find_display_name(from_ticker, from_network)
+    to_display = find_display_name(to_ticker, to_network)
+    amount = float(tx.amount_from)
+
+    # Clear any existing state and pre-fill with previous exchange details
+    await state.clear()
+    await state.update_data(
+        lang=lang,
+        from_ticker=from_ticker,
+        from_network=from_network,
+        from_display=from_display,
+        to_ticker=to_ticker,
+        to_network=to_network,
+        to_display=to_display,
+    )
+
+    # Fetch minimum amount to validate
+    await callback_query.message.edit_text(
+        get_text("fetching_details", lang, from_display=from_display, to_display=to_display),
+        parse_mode="Markdown"
+    )
+
+    provider = "swapzone"
+    min_data = await swapzone.get_min_amount(from_ticker, from_network, to_ticker, to_network)
+
+    if "error" in min_data and CHANGENOW_API_KEY:
+        min_data = await changenow.get_min_amount(from_ticker, from_network, to_ticker, to_network)
+        if "error" not in min_data:
+            provider = "changenow"
+
+    if "error" in min_data:
+        await callback_query.message.edit_text(
+            get_text("pair_unavailable", lang, error=min_data['error']),
+            reply_markup=get_start_keyboard(user_id=user_id, lang=lang),
+            parse_mode="Markdown"
+        )
+        await state.clear()
+        await callback_query.answer()
+        return
+
+    min_amount = min_data.get("minAmount", 0)
+    await state.update_data(min_amount=min_amount, provider=provider)
+
+    # Pre-fill the amount and jump to enter_amount confirmation
+    # Show the quote with the previous amount
+    await callback_query.message.edit_text(
+        get_text("enter_amount", lang, from_display=from_display, to_display=to_display, min_amount=format_amount(min_amount))
+        + f"\n\n💡 _Previous amount: {format_amount(amount)} {from_display}_",
+        reply_markup=get_cancel_keyboard(lang=lang),
+        parse_mode="Markdown"
+    )
+    await state.set_state(ExchangeState.enter_amount)
     await callback_query.answer()
 
 
