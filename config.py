@@ -29,6 +29,9 @@ DMARKET_API_URL = "https://api.dmarket.com"
 # Users who can access CS2 skins feature (test mode)
 SKINS_TEST_USER_IDS = [int(x.strip()) for x in os.getenv("SKINS_TEST_USER_IDS", "6840070959").split(",") if x.strip()]
 
+# Users who can access beta features (price alerts, etc.)
+BETA_TEST_USER_IDS = [int(x) for x in os.getenv("BETA_TEST_USER_IDS", "6840070959").split(",") if x.strip()]
+
 # Markup on skin prices (percentage)
 SKINS_MARKUP_PERCENT = float(os.getenv("SKINS_MARKUP_PERCENT", "7.0"))
 

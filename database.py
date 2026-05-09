@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import BigInteger, String, Integer, Numeric, DateTime, ForeignKey, func, inspect, text
+from sqlalchemy import BigInteger, String, Integer, Numeric, DateTime, Boolean, ForeignKey, func, inspect, text
 from config import DATABASE_URL
 from typing import List, Optional
 from datetime import datetime
@@ -89,6 +89,19 @@ class SkinTransaction(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="skin_transactions")
+
+
+class PriceAlert(Base):
+    __tablename__ = "price_alerts"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String, nullable=False)  # e.g., "btc", "eth", "ton"
+    direction: Mapped[str] = mapped_column(String, nullable=False)  # "above" or "below"
+    target_price: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)  # USD price
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
 
 async def init_db():
     async with engine.begin() as conn:

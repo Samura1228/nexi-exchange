@@ -20,6 +20,13 @@ class SkinState(StatesGroup):
     confirm = State()          # User is confirming the purchase
 
 
+class AlertState(StatesGroup):
+    """FSM states for the price alert flow."""
+    select_currency = State()   # User selecting currency for alert
+    select_direction = State()  # User selecting above/below
+    enter_price = State()       # User entering target price
+
+
 class SupportState(StatesGroup):
     """FSM states for the support chat flow."""
     waiting_message = State()  # User is typing their support message

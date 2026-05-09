@@ -84,6 +84,26 @@ TEXTS = {
         "lang_en": "🇬🇧 English",
         "lang_ru": "🇷🇺 Русский",
 
+        # Price Alerts
+        "btn_alerts": "📊 Price Alerts",
+        "btn_new_alert": "➕ New Alert",
+        "btn_my_alerts": "📋 My Alerts",
+        "btn_back_alerts": "🔙 Back to Alerts",
+        "alerts_menu": "📊 **Price Alerts**\n\nGet notified when a cryptocurrency reaches your target price.\n\nChoose an option:",
+        "alert_select_currency": "📊 **New Price Alert**\n\nSelect the cryptocurrency:",
+        "alert_select_direction": "📊 **New Alert for {currency}**\n\nCurrent price: **${current_price:,.2f}**\n\nNotify me when price goes:",
+        "alert_enter_price": "📊 **{currency} — {direction}**\n\nCurrent price: **${current_price:,.2f}**\n\nEnter your target price in USD:",
+        "alert_invalid_price": "❌ Please enter a valid positive number (e.g., 60000 or 60000.50).",
+        "alert_price_wrong_direction": "❌ You selected **{direction}**, but the current price is already ${current_price:,.2f}.\n\nPlease enter a price that is **{direction}** the current price.",
+        "alert_created": "✅ **Alert Created!**\n\n{currency} {direction_emoji} {direction} **${target_price:,.2f}**\n\nYou'll be notified when the price crosses this level.",
+        "alert_limit_reached": "❌ You've reached the maximum of **10 active alerts**.\n\nPlease delete an existing alert before creating a new one.",
+        "alert_list_title": "📋 **Your Active Alerts:**\n\n",
+        "alert_list_item": "{i}. {currency} {direction_emoji} {direction} **${target_price:,.2f}**\n",
+        "alert_list_empty": "📋 **Your Alerts**\n\nNo active alerts. Create one to get started!",
+        "alert_deleted": "🗑️ Alert deleted.",
+        "alert_triggered": "🔔 **Price Alert Triggered!**\n\n{direction_emoji} **{currency}** is now {direction} **${target_price:,.2f}**!\nCurrent price: **${current_price:,.2f}**\n\nYour alert for {currency} {direction} ${target_price:,.2f} has been triggered and removed.",
+        "alert_error_price_fetch": "❌ Could not fetch current price. Please try again later.",
+
         # Errors
         "error_generic": "❌ Something went wrong. Please try again.",
     },
@@ -170,6 +190,26 @@ TEXTS = {
         # Language names
         "lang_en": "🇬🇧 English",
         "lang_ru": "🇷🇺 Русский",
+
+        # Price Alerts
+        "btn_alerts": "📊 Ценовые оповещения",
+        "btn_new_alert": "➕ Новое оповещение",
+        "btn_my_alerts": "📋 Мои оповещения",
+        "btn_back_alerts": "🔙 Назад к оповещениям",
+        "alerts_menu": "📊 **Ценовые оповещения**\n\nПолучайте уведомления, когда криптовалюта достигнет целевой цены.\n\nВыберите действие:",
+        "alert_select_currency": "📊 **Новое оповещение**\n\nВыберите криптовалюту:",
+        "alert_select_direction": "📊 **Новое оповещение для {currency}**\n\nТекущая цена: **${current_price:,.2f}**\n\nУведомить, когда цена:",
+        "alert_enter_price": "📊 **{currency} — {direction}**\n\nТекущая цена: **${current_price:,.2f}**\n\nВведите целевую цену в USD:",
+        "alert_invalid_price": "❌ Пожалуйста, введите корректное положительное число (например, 60000 или 60000.50).",
+        "alert_price_wrong_direction": "❌ Вы выбрали **{direction}**, но текущая цена уже ${current_price:,.2f}.\n\nВведите цену, которая **{direction}** текущей.",
+        "alert_created": "✅ **Оповещение создано!**\n\n{currency} {direction_emoji} {direction} **${target_price:,.2f}**\n\nВы получите уведомление, когда цена пересечёт этот уровень.",
+        "alert_limit_reached": "❌ Вы достигли максимума в **10 активных оповещений**.\n\nУдалите существующее оповещение, чтобы создать новое.",
+        "alert_list_title": "📋 **Ваши активные оповещения:**\n\n",
+        "alert_list_item": "{i}. {currency} {direction_emoji} {direction} **${target_price:,.2f}**\n",
+        "alert_list_empty": "📋 **Ваши оповещения**\n\nНет активных оповещений. Создайте первое!",
+        "alert_deleted": "🗑️ Оповещение удалено.",
+        "alert_triggered": "🔔 **Ценовое оповещение сработало!**\n\n{direction_emoji} **{currency}** сейчас {direction} **${target_price:,.2f}**!\nТекущая цена: **${current_price:,.2f}**\n\nВаше оповещение для {currency} {direction} ${target_price:,.2f} сработало и удалено.",
+        "alert_error_price_fetch": "❌ Не удалось получить текущую цену. Попробуйте позже.",
 
         # Errors
         "error_generic": "❌ Что-то пошло не так. Попробуйте ещё раз.",

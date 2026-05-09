@@ -7,8 +7,9 @@ from aiogram.types import BotCommand
 
 from config import BOT_TOKEN
 from database import init_db, migrate_db
-from handlers import start, exchange, skins, history, settings, referral, support
+from handlers import start, exchange, skins, history, settings, referral, support, alerts
 from utils.poller import poll_transactions
+from utils.price_checker import check_price_alerts
 
 # Configure logging
 logging.basicConfig(
@@ -28,6 +29,7 @@ async def main() -> None:
     dp.include_router(start.router)
     dp.include_router(support.router)
     dp.include_router(exchange.router)
+    dp.include_router(alerts.router)
     dp.include_router(referral.router)
     dp.include_router(skins.router)
     dp.include_router(history.router)
@@ -45,6 +47,10 @@ async def main() -> None:
     # Start background transaction poller
     poller_task = asyncio.create_task(poll_transactions(bot))
     logger.info("Transaction poller started")
+    
+    # Start background price alert checker
+    price_checker_task = asyncio.create_task(check_price_alerts(bot))
+    logger.info("Price alert checker started")
     
     # Clear old bot commands and set new ones
     await bot.delete_my_commands()

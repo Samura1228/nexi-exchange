@@ -1,5 +1,5 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import SUPPORTED_CURRENCIES, SKINS_TEST_USER_IDS, BOT_USERNAME
+from config import SUPPORTED_CURRENCIES, SKINS_TEST_USER_IDS, BETA_TEST_USER_IDS, BOT_USERNAME
 from locales.texts import get_text
 
 
@@ -26,6 +26,8 @@ def get_start_keyboard(user_id: int = 0, lang: str = "en") -> InlineKeyboardMark
     ]
     if user_id in SKINS_TEST_USER_IDS:
         buttons.append([InlineKeyboardButton(text=get_text("btn_skins", lang), callback_data="start_skins")])
+    if user_id in BETA_TEST_USER_IDS:
+        buttons.append([InlineKeyboardButton(text=get_text("btn_alerts", lang), callback_data="price_alerts")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -192,6 +194,74 @@ def get_skin_confirm_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=get_text("btn_cancel", lang), callback_data="cancel_skins"),
         ]
     ])
+
+
+# ── Price Alert keyboards ─────────────────────────────────────────────
+
+
+ALERT_CURRENCIES = [
+    ("BTC", "btc"),
+    ("ETH", "eth"),
+    ("SOL", "sol"),
+    ("TON", "ton"),
+    ("XRP", "xrp"),
+    ("TRX", "trx"),
+    ("LTC", "ltc"),
+]
+
+
+def get_alerts_menu_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
+    """Main alerts menu keyboard."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("btn_new_alert", lang), callback_data="alert_new")],
+        [InlineKeyboardButton(text=get_text("btn_my_alerts", lang), callback_data="alert_list")],
+        [InlineKeyboardButton(text=get_text("btn_back", lang), callback_data="back_to_start")],
+    ])
+
+
+def get_alert_currency_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
+    """Currency selection keyboard for alerts."""
+    buttons = []
+    row = []
+    for display, ticker in ALERT_CURRENCIES:
+        row.append(InlineKeyboardButton(text=display, callback_data=f"alert_cur:{ticker}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton(text=get_text("btn_back_alerts", lang), callback_data="price_alerts")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_alert_direction_keyboard(currency: str, lang: str = "en") -> InlineKeyboardMarkup:
+    """Above/below direction keyboard for alerts."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📈 Above", callback_data=f"alert_dir:{currency}:above"),
+            InlineKeyboardButton(text="📉 Below", callback_data=f"alert_dir:{currency}:below"),
+        ],
+        [InlineKeyboardButton(text=get_text("btn_back_alerts", lang), callback_data="price_alerts")],
+    ])
+
+
+def get_alert_cancel_keyboard(lang: str = "en") -> InlineKeyboardMarkup:
+    """Cancel keyboard during alert price entry."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text("btn_back_alerts", lang), callback_data="price_alerts")],
+    ])
+
+
+def get_alert_list_keyboard(alerts: list, lang: str = "en") -> InlineKeyboardMarkup:
+    """Keyboard for listing alerts with delete buttons."""
+    buttons = []
+    for i, alert in enumerate(alerts, 1):
+        currency = alert.currency.upper()
+        direction_emoji = "📈" if alert.direction == "above" else "📉"
+        btn_text = f"🗑️ {i}. {currency} {direction_emoji} ${alert.target_price:,.2f}"
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"alert_del:{alert.id}")])
+    buttons.append([InlineKeyboardButton(text=get_text("btn_back_alerts", lang), callback_data="price_alerts")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 # ── Support keyboards ─────────────────────────────────────────────────
