@@ -28,6 +28,7 @@ FIAT_CRYPTO_MAP = {
     "sol": {"onramper": "sol", "guardarian": "sol", "network": "solana", "display": "SOL"},
     "ton": {"onramper": "ton", "guardarian": "ton", "network": "ton", "display": "TON"},
     "usdt": {"onramper": "usdt_trc20", "guardarian": "usdt", "network": "tron", "display": "USDT (TRC20)"},
+    "usdt_ton": {"onramper": "usdt_ton", "guardarian": "usdt", "network": "ton", "display": "USDT (TON)"},
     "ltc": {"onramper": "ltc", "guardarian": "ltc", "network": "litecoin", "display": "LTC"},
     "xrp": {"onramper": "xrp", "guardarian": "xrp", "network": "ripple", "display": "XRP"},
     "trx": {"onramper": "trx", "guardarian": "trx", "network": "tron", "display": "TRX"},

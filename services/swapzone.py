@@ -39,6 +39,7 @@ CURRENCY_MAP = {
     ("ton", "ton"): "ton",
     ("usdt", "trx"): "usdttrc20",
     ("usdt", "eth"): "usdterc20",
+    ("usdt", "ton"): "usdtton",
     ("ltc", "ltc"): "ltc",
     ("xrp", "xrp"): "xrp",
     ("trx", "trx"): "trx",

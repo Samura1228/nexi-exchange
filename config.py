@@ -43,6 +43,7 @@ SUPPORTED_CURRENCIES = [
     ("TON", "ton", "ton"),
     ("USDT (TRC20)", "usdt", "trx"),
     ("USDT (ERC20)", "usdt", "eth"),
+    ("USDT (TON)", "usdt", "ton"),
     ("LTC", "ltc", "ltc"),
     ("XRP", "xrp", "xrp"),
     ("TRX", "trx", "trx"),
