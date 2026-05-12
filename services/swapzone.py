@@ -120,7 +120,13 @@ class SwapzoneService:
                                 await asyncio.sleep(RETRY_DELAY)
                                 continue
 
-                            return {"error": self._sanitize_error(error_msg)}
+                            result = {"error": self._sanitize_error(error_msg)}
+                            # Preserve minAmount/maxAmount from error responses (useful for user feedback)
+                            if data.get("minAmount") is not None:
+                                result["minAmount"] = data["minAmount"]
+                            if data.get("maxAmount") is not None:
+                                result["maxAmount"] = data["maxAmount"]
+                            return result
 
                         # Accept both dict and list responses (list for chooseRate=all)
                         if isinstance(data, (dict, list)):
@@ -158,50 +164,149 @@ class SwapzoneService:
     ) -> dict:
         """
         Get estimated exchange amount and quotaId from Swapzone.
-        First tries without noRefundAddress filter (more providers, lower minimums).
-        Falls back to noRefundAddress=true if needed.
+        Uses chooseRate=all to fetch ALL providers, then picks the best one
+        that actually supports the given amount (amount >= provider minAmount).
+        This avoids the mismatch where get_min_amount shows the lowest min across
+        all providers but chooseRate=best picks a provider with a higher min.
         Returns: {"estimatedAmount": float, "quotaId": str, ...} or {"error": "..."}
         """
         from_ticker = _get_swapzone_ticker(from_currency, from_network)
         to_ticker = _get_swapzone_ticker(to_currency, to_network)
 
-        # First try without noRefundAddress filter — allows all providers (lower minimums)
+        # Use chooseRate=all to get ALL providers and pick the best one that supports our amount
         params = {
             "from": from_ticker,
             "to": to_ticker,
             "amount": str(amount),
             "rateType": "floating",
             "availableInUSA": "false",
-            "chooseRate": "best",
+            "chooseRate": "all",
             "noRefundAddress": "false",
         }
 
         data = await self._request("GET", "/exchange/get-rate", params=params)
 
-        if "error" in data:
-            # Fallback: try with noRefundAddress=true (fewer providers but guaranteed no refund needed)
+        # If the response is a list (chooseRate=all), pick the best provider for this amount
+        if isinstance(data, list) and len(data) > 0:
+            # Filter providers where the amount meets their minimum
+            eligible = []
+            for provider in data:
+                provider_min = provider.get("minAmount")
+                provider_max = provider.get("maxAmount")
+                provider_amount_to = provider.get("amountTo")
+
+                # Skip providers without a valid amountTo
+                if provider_amount_to is None or float(provider_amount_to) <= 0:
+                    continue
+
+                # Check minimum
+                if provider_min is not None and float(provider_min) > 0 and amount < float(provider_min):
+                    continue
+
+                # Check maximum
+                if provider_max is not None and float(provider_max) > 0 and amount > float(provider_max):
+                    continue
+
+                eligible.append(provider)
+
+            if not eligible:
+                # No provider supports this amount — find the actual lowest minimum to inform the user
+                all_mins = []
+                for provider in data:
+                    provider_min = provider.get("minAmount")
+                    if provider_min is not None and float(provider_min) > 0:
+                        all_mins.append(float(provider_min))
+                if all_mins:
+                    actual_min = min(all_mins)
+                    logger.warning(
+                        f"No provider supports amount {amount} for {from_ticker}->{to_ticker}. "
+                        f"Lowest provider min: {actual_min}"
+                    )
+                    return {"error": f"Minimum amount for this pair is {actual_min:.2f}", "minAmount": actual_min}
+                return {"error": "No providers available for this exchange pair"}
+
+            # Pick the provider with the highest amountTo (best rate for the user)
+            best = max(eligible, key=lambda p: float(p.get("amountTo", 0)))
+            logger.info(
+                f"Swapzone get_estimated_amount: picked provider '{best.get('adapter')}' "
+                f"(amountTo={best.get('amountTo')}) from {len(eligible)} eligible / {len(data)} total providers"
+            )
+
+            return {
+                "estimatedAmount": float(best["amountTo"]),
+                "quotaId": best.get("quotaId", ""),
+                "minAmount": best.get("minAmount"),
+                "maxAmount": best.get("maxAmount"),
+                "transactionSpeedForecast": best.get("time", ""),
+            }
+
+        # If the response is a dict with an error, try fallback
+        if isinstance(data, dict) and "error" in data:
+            # Save minAmount from first error response for better error messaging
+            first_error_min = data.get("minAmount")
+
+            # Fallback: try with noRefundAddress=true
             logger.info("get_estimated_amount: retrying with noRefundAddress=true")
             params["noRefundAddress"] = "true"
-            data = await self._request("GET", "/exchange/get-rate", params=params)
-            if "error" in data:
-                return data
+            fallback_data = await self._request("GET", "/exchange/get-rate", params=params)
 
-        # Extract relevant fields from response
-        # Swapzone returns "amountTo" (not "estimatedAmount")
-        estimated_amount = data.get("amountTo")
-        quota_id = data.get("quotaId", "")
+            if isinstance(fallback_data, list) and len(fallback_data) > 0:
+                # Same filtering logic for fallback
+                eligible = []
+                for provider in fallback_data:
+                    provider_min = provider.get("minAmount")
+                    provider_max = provider.get("maxAmount")
+                    provider_amount_to = provider.get("amountTo")
+                    if provider_amount_to is None or float(provider_amount_to) <= 0:
+                        continue
+                    if provider_min is not None and float(provider_min) > 0 and amount < float(provider_min):
+                        continue
+                    if provider_max is not None and float(provider_max) > 0 and amount > float(provider_max):
+                        continue
+                    eligible.append(provider)
 
-        if estimated_amount is None:
-            logger.error(f"Swapzone get-rate response missing amountTo: {data}")
-            return {"error": "Invalid response from exchange service"}
+                if not eligible:
+                    return {"error": "No providers available for this amount"}
 
-        return {
-            "estimatedAmount": float(estimated_amount),
-            "quotaId": quota_id,
-            "minAmount": data.get("minAmount"),
-            "maxAmount": data.get("maxAmount"),
-            "transactionSpeedForecast": data.get("time", ""),
-        }
+                best = max(eligible, key=lambda p: float(p.get("amountTo", 0)))
+                return {
+                    "estimatedAmount": float(best["amountTo"]),
+                    "quotaId": best.get("quotaId", ""),
+                    "minAmount": best.get("minAmount"),
+                    "maxAmount": best.get("maxAmount"),
+                    "transactionSpeedForecast": best.get("time", ""),
+                }
+
+            # Fallback also failed — return error with minAmount if available
+            if isinstance(fallback_data, dict) and "error" in fallback_data:
+                error_result = fallback_data
+                # Prefer minAmount from first error if fallback doesn't have one
+                if first_error_min is not None and "minAmount" not in error_result:
+                    error_result["minAmount"] = first_error_min
+                return error_result
+
+            # Return original error with minAmount preserved
+            return data
+
+        # Fallback: handle single dict response (shouldn't happen with chooseRate=all, but be safe)
+        if isinstance(data, dict):
+            estimated_amount = data.get("amountTo")
+            quota_id = data.get("quotaId", "")
+
+            if estimated_amount is None:
+                logger.error(f"Swapzone get-rate response missing amountTo: {data}")
+                return {"error": "Invalid response from exchange service"}
+
+            return {
+                "estimatedAmount": float(estimated_amount),
+                "quotaId": quota_id,
+                "minAmount": data.get("minAmount"),
+                "maxAmount": data.get("maxAmount"),
+                "transactionSpeedForecast": data.get("time", ""),
+            }
+
+        logger.error(f"Swapzone get_estimated_amount: unexpected response type: {type(data)}")
+        return {"error": "Invalid response from exchange service"}
 
     async def get_min_amount(
         self,
