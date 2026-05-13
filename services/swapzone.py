@@ -318,17 +318,25 @@ class SwapzoneService:
         """
         Get minimum exchange amount from Swapzone.
         Uses the get-rate endpoint with chooseRate=all to find the lowest minAmount
-        across all available providers.
+        from providers that actually offer reasonable rates.
+
+        Previously this returned the absolute lowest minAmount across ALL providers,
+        but that caused a mismatch: the provider with the lowest min often had a
+        terrible rate and would never be selected by get_estimated_amount().
+        Now we filter out providers with bad rates (>50% loss) before picking the min.
+
         Returns: {"minAmount": float, ...} or {"error": "..."}
         """
         from_ticker = _get_swapzone_ticker(from_currency, from_network)
         to_ticker = _get_swapzone_ticker(to_currency, to_network)
 
         # Use chooseRate=all and noRefundAddress=false to get ALL providers and find lowest min
+        # We use amount=100 as a reference amount to evaluate provider rates
+        reference_amount = 100
         params = {
             "from": from_ticker,
             "to": to_ticker,
-            "amount": "100",
+            "amount": str(reference_amount),
             "rateType": "floating",
             "availableInUSA": "false",
             "chooseRate": "all",
@@ -337,19 +345,66 @@ class SwapzoneService:
 
         data = await self._request("GET", "/exchange/get-rate", params=params)
 
-        if "error" in data:
+        if isinstance(data, dict) and "error" in data:
             return data
 
         # When chooseRate=all, response is a list of providers
         if isinstance(data, list) and len(data) > 0:
-            # Find the lowest minAmount across all providers
-            min_amounts = []
+            # First, find the best rate to use as a baseline for filtering
+            best_rate = 0
+            for provider in data:
+                amount_to = provider.get("amountTo")
+                if amount_to is not None and float(amount_to) > 0:
+                    rate = float(amount_to) / reference_amount
+                    if rate > best_rate:
+                        best_rate = rate
+
+            # Filter providers: keep only those with reasonable rates
+            # A provider is "reasonable" if its rate is at least 50% of the best rate.
+            # This filters out providers with terrible rates that would never be
+            # selected by get_estimated_amount() (which picks the best rate).
+            rate_threshold = best_rate * 0.5 if best_rate > 0 else 0
+
+            reasonable_mins = []
+            all_mins = []
             for provider in data:
                 provider_min = provider.get("minAmount")
-                if provider_min is not None and float(provider_min) > 0:
-                    min_amounts.append(float(provider_min))
-            if min_amounts:
-                return {"minAmount": min(min_amounts)}
+                amount_to = provider.get("amountTo")
+
+                if provider_min is None or float(provider_min) <= 0:
+                    continue
+
+                all_mins.append(float(provider_min))
+
+                # Check if this provider has a reasonable rate
+                if amount_to is not None and float(amount_to) > 0:
+                    rate = float(amount_to) / reference_amount
+                    if rate >= rate_threshold:
+                        reasonable_mins.append(float(provider_min))
+
+            if reasonable_mins:
+                min_val = min(reasonable_mins)
+                # Add a 10% safety buffer to account for rate fluctuations
+                # between when we check the min and when the user submits
+                buffered_min = round(min_val * 1.1, 2)
+                logger.info(
+                    f"get_min_amount {from_ticker}->{to_ticker}: "
+                    f"raw_min={min_val}, buffered={buffered_min}, "
+                    f"reasonable_providers={len(reasonable_mins)}/{len(data)}, "
+                    f"absolute_lowest={min(all_mins) if all_mins else 'N/A'}"
+                )
+                return {"minAmount": buffered_min}
+
+            # Fallback: if no reasonable providers found, use all mins with buffer
+            if all_mins:
+                min_val = min(all_mins)
+                buffered_min = round(min_val * 1.3, 2)
+                logger.warning(
+                    f"get_min_amount {from_ticker}->{to_ticker}: "
+                    f"no reasonable-rate providers found, using absolute min with 30% buffer: {buffered_min}"
+                )
+                return {"minAmount": buffered_min}
+
             # If no valid minAmount found in list, return 0
             return {"minAmount": 0}
 
@@ -358,7 +413,8 @@ class SwapzoneService:
             min_amount = data.get("minAmount")
             if min_amount is None:
                 return {"minAmount": 0}
-            return {"minAmount": float(min_amount)}
+            # Apply buffer to single-provider response too
+            return {"minAmount": round(float(min_amount) * 1.1, 2)}
 
         return {"minAmount": 0}
 
